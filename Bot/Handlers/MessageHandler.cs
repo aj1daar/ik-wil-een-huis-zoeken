@@ -1,4 +1,5 @@
 using IWEHZ.Bot.Conversations;
+using IWEHZ.Infrastructure.Markdown;
 using IWEHZ.Services;
 using Telegram.Bot;
 using Telegram.Bot.Types;
@@ -23,6 +24,9 @@ public sealed class MessageHandler(
 
         var chatId = message.Chat.Id;
         var text = message.Text.Trim();
+
+        if (text.Length > 4096) return;
+
         var username = message.From.Username;
 
         if (text.StartsWith("/activate") && chatId == AdminChatId)
@@ -34,9 +38,7 @@ public sealed class MessageHandler(
         var user = await userService.GetByChatIdAsync(chatId, ct);
 
         if (user is null)
-        {
             user = await userService.RegisterAsync(chatId, username, ct);
-        }
 
         if (!user.IsActive)
         {
@@ -72,12 +74,12 @@ public sealed class MessageHandler(
         {
             case ConversationStep.AwaitingBudget:
             case ConversationStep.AwaitingNewBudget:
-                await HandleBudgetInputAsync(bot, user, chatId, text, step, ct);
+                await HandleBudgetInputAsync(bot, chatId, text, step, ct);
                 break;
 
             case ConversationStep.AwaitingCities:
             case ConversationStep.AwaitingNewCities:
-                await HandleCitiesInputAsync(bot, user, chatId, text, step, ct);
+                await HandleCitiesInputAsync(bot, chatId, text, step, ct);
                 break;
 
             case ConversationStep.AwaitingSettingsChoice:
@@ -122,12 +124,10 @@ public sealed class MessageHandler(
     }
 
     private async Task HandleBudgetInputAsync(
-        ITelegramBotClient bot, DomainUser user, long chatId, string text,
+        ITelegramBotClient bot, long chatId, string text,
         ConversationStep currentStep, CancellationToken ct)
     {
-        var cleaned = new string(text.Where(c => char.IsDigit(c)).ToArray());
-
-        if (!decimal.TryParse(cleaned, out var budget) || budget < 100 || budget > 10000)
+        if (!BudgetParser.TryParse(text, out var budget))
         {
             await bot.SendMessage(chatId,
                 "Please enter a valid budget between €100 and €10,000\\.",
@@ -152,22 +152,31 @@ public sealed class MessageHandler(
             $"✅ Budget set to €{budget:N0}/month\\.\n\n" +
             $"Now, which *cities* are you looking in?\n\n" +
             $"Type the city names separated by commas, in Dutch or English\\.\n\n" +
-            $"*Available cities:*\n{EscapeMd(cityList)}",
+            $"*Available cities:*\n{MarkdownHelper.EscapeV2(cityList)}",
             parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
             replyMarkup: new ReplyKeyboardRemove(),
             cancellationToken: ct);
     }
 
     private async Task HandleCitiesInputAsync(
-        ITelegramBotClient bot, DomainUser user, long chatId, string text,
+        ITelegramBotClient bot, long chatId, string text,
         ConversationStep currentStep, CancellationToken ct)
     {
         var inputs = text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        if (inputs.Length == 0)
+        if (inputs.Length == 0 || inputs.Length > 25)
         {
             await bot.SendMessage(chatId,
-                "Please enter at least one city\\.",
+                "Please enter between 1 and 25 cities\\.",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                cancellationToken: ct);
+            return;
+        }
+
+        if (inputs.Any(i => i.Length > 100))
+        {
+            await bot.SendMessage(chatId,
+                "City names must be under 100 characters\\.",
                 parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
                 cancellationToken: ct);
             return;
@@ -187,14 +196,14 @@ public sealed class MessageHandler(
 
         if (unknowns.Count > 0)
         {
-            var unknownList = string.Join(", ", unknowns.Select(EscapeMd));
+            var unknownList = string.Join(", ", unknowns.Select(MarkdownHelper.EscapeV2));
             var all = await cityService.GetAllActiveAsync(ct);
             var available = string.Join(", ", all.Select(c =>
                 c.NameNl == c.NameEn ? c.NameNl : $"{c.NameNl}/{c.NameEn}"));
 
             await bot.SendMessage(chatId,
                 $"❌ Unknown cities: *{unknownList}*\\.\n\n" +
-                $"Please use names from this list:\n{EscapeMd(available)}",
+                $"Please use names from this list:\n{MarkdownHelper.EscapeV2(available)}",
                 parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
                 cancellationToken: ct);
             return;
@@ -268,7 +277,7 @@ public sealed class MessageHandler(
                 c.NameNl == c.NameEn ? c.NameNl : $"{c.NameNl}/{c.NameEn}"));
 
             await bot.SendMessage(chatId,
-                $"Enter the new cities separated by commas:\n\n{EscapeMd(cityList)}",
+                $"Enter the new cities separated by commas:\n\n{MarkdownHelper.EscapeV2(cityList)}",
                 parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
                 replyMarkup: new ReplyKeyboardRemove(),
                 cancellationToken: ct);
@@ -296,7 +305,7 @@ public sealed class MessageHandler(
 
         var list = string.Join("\n", refreshed.UserCities.Select(uc => $"• {uc.City.NameNl}"));
         await bot.SendMessage(chatId,
-            $"📍 *Your cities:*\n{EscapeMd(list)}\n\n💶 *Max budget:* €{refreshed.MaxBudget:N0}/month",
+            $"📍 *Your cities:*\n{MarkdownHelper.EscapeV2(list)}\n\n💶 *Max budget:* €{refreshed.MaxBudget:N0}/month",
             parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
             cancellationToken: ct);
     }
@@ -325,8 +334,4 @@ public sealed class MessageHandler(
             logger.LogWarning(ex, "Could not notify activated user {ChatId}", targetChatId);
         }
     }
-
-    private static string EscapeMd(string text) =>
-        text.Replace("_", "\\_").Replace("*", "\\*").Replace("[", "\\[").Replace("`", "\\`")
-            .Replace(".", "\\.").Replace("!", "\\!").Replace("-", "\\-").Replace("(", "\\(").Replace(")", "\\)");
 }

@@ -1,4 +1,5 @@
 using IWEHZ.Domain.Models;
+using IWEHZ.Infrastructure.Markdown;
 using IWEHZ.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Telegram.Bot;
@@ -59,11 +60,11 @@ public sealed class NotificationDispatcher(
     {
         var message =
             $"🏠 *New rental listing*\n\n" +
-            $"*{EscapeMd(listing.Title)}*\n" +
-            $"📍 {EscapeMd(listing.City)}\n" +
+            $"*{MarkdownHelper.EscapeV2(listing.Title)}*\n" +
+            $"📍 {MarkdownHelper.EscapeV2(listing.City)}\n" +
             $"💶 €{listing.Price:N0} / month\n" +
-            $"🔗 [View listing]({listing.SourceUrl})\n" +
-            $"_Source: {EscapeMd(listing.Source)}_";
+            $"🔗 [View listing]({MarkdownHelper.EscapeV2(listing.SourceUrl)})\n" +
+            $"_Source: {MarkdownHelper.EscapeV2(listing.Source)}_";
 
         try
         {
@@ -79,6 +80,4 @@ public sealed class NotificationDispatcher(
         }
     }
 
-    private static string EscapeMd(string text) =>
-        text.Replace("_", "\\_").Replace("*", "\\*").Replace("[", "\\[").Replace("`", "\\`").Replace(".", "\\.").Replace("!", "\\!").Replace("-", "\\-").Replace("(", "\\(").Replace(")", "\\)");
 }

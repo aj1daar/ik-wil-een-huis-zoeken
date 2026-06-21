@@ -9,6 +9,19 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="IWEHZ.Tests/**" />
+    <Content Remove="IWEHZ.Tests/**" />
+    <EmbeddedResource Remove="IWEHZ.Tests/**" />
+    <None Remove="IWEHZ.Tests/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>IWEHZ.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.2.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.1">

@@ -51,7 +51,7 @@ public sealed class HuurwoningenScraper : IPropertyScraper
                 var href = anchor.Href ?? string.Empty;
 
                 if (string.IsNullOrEmpty(externalId))
-                    externalId = ExtractIdFromUrl(href);
+                    externalId = ScraperHelpers.ExtractLastUrlSegment(href);
 
                 if (string.IsNullOrEmpty(externalId)) continue;
 
@@ -62,7 +62,7 @@ public sealed class HuurwoningenScraper : IPropertyScraper
                 var city = cityEl?.TextContent.Trim() ?? string.Empty;
 
                 var priceEl = card.QuerySelector("[class*='price'], .listing-search-item__price");
-                var price = ParsePrice(priceEl?.TextContent ?? string.Empty);
+                var price = ScraperHelpers.ParsePrice(priceEl?.TextContent ?? string.Empty);
                 if (price <= 0) continue;
 
                 listings.Add(new ScrapedListing(externalId, title, city, price, href, SourceName));
@@ -74,17 +74,5 @@ public sealed class HuurwoningenScraper : IPropertyScraper
         }
 
         return listings;
-    }
-
-    private static string ExtractIdFromUrl(string url)
-    {
-        var segments = url.TrimEnd('/').Split('/');
-        return segments.Length > 0 ? segments[^1] : string.Empty;
-    }
-
-    private static decimal ParsePrice(string text)
-    {
-        var cleaned = new string(text.Where(c => char.IsDigit(c)).ToArray());
-        return decimal.TryParse(cleaned, out var result) ? result : 0;
     }
 }

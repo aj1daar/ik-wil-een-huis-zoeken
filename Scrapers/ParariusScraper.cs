@@ -1,7 +1,6 @@
 using AngleSharp;
 using AngleSharp.Html.Dom;
 using IWEHZ.Infrastructure.Http;
-using Microsoft.Extensions.Configuration;
 
 namespace IWEHZ.Scrapers;
 
@@ -47,7 +46,7 @@ public sealed class ParariusScraper : IPropertyScraper
                 if (anchor is null) continue;
 
                 var href = anchor.Href ?? string.Empty;
-                var externalId = ExtractExternalId(href);
+                var externalId = ScraperHelpers.ExtractLastUrlSegment(href);
                 if (string.IsNullOrEmpty(externalId)) continue;
 
                 var title = anchor.TextContent.Trim();
@@ -56,8 +55,7 @@ public sealed class ParariusScraper : IPropertyScraper
                 var city = cityEl?.TextContent.Trim() ?? string.Empty;
 
                 var priceEl = article.QuerySelector(".listing-search-item__price");
-                var priceText = priceEl?.TextContent ?? string.Empty;
-                var price = ParsePrice(priceText);
+                var price = ScraperHelpers.ParsePrice(priceEl?.TextContent ?? string.Empty);
                 if (price <= 0) continue;
 
                 listings.Add(new ScrapedListing(externalId, title, city, price, href, SourceName));
@@ -69,18 +67,5 @@ public sealed class ParariusScraper : IPropertyScraper
         }
 
         return listings;
-    }
-
-    private static string ExtractExternalId(string url)
-    {
-        var segments = url.TrimEnd('/').Split('/');
-        return segments.Length > 0 ? segments[^1] : string.Empty;
-    }
-
-    private static decimal ParsePrice(string text)
-    {
-        var cleaned = new string(text.Where(c => char.IsDigit(c) || c == ',').ToArray())
-            .Replace(",", string.Empty);
-        return decimal.TryParse(cleaned, out var result) ? result : 0;
     }
 }

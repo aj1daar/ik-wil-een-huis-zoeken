@@ -50,7 +50,7 @@ jobs:
       - name: Stop service
         run: |
           ssh -i ~/.ssh/deploy_key ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
-            "systemctl stop iwehz || true"
+            "mkdir -p /opt/iwehz/publish && systemctl stop iwehz || true"
 
       - name: Upload binary
         run: |
@@ -87,7 +87,6 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
             "chmod +x /opt/iwehz/publish/IWEHZ && \
-             mkdir -p /opt/iwehz/publish && \
              systemctl daemon-reload && \
              systemctl enable iwehz && \
              systemctl start iwehz"

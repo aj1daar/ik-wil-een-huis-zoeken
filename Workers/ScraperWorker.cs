@@ -1,3 +1,4 @@
+using System.Net;
 using IWEHZ.Domain.Models;
 using IWEHZ.Infrastructure.Persistence;
 using IWEHZ.Scrapers;
@@ -10,6 +11,7 @@ public sealed class ScraperWorker(
     IEnumerable<IPropertyScraper> scrapers,
     IDbContextFactory<AppDbContext> dbFactory,
     NotificationDispatcher dispatcher,
+    AdminNotifier adminNotifier,
     IConfiguration config,
     ILogger<ScraperWorker> logger) : BackgroundService
 {
@@ -34,9 +36,27 @@ public sealed class ScraperWorker(
                 {
                     return;
                 }
+                catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    logger.LogWarning("Scraper {Source} blocked with 403", scraper.SourceName);
+                    await adminNotifier.NotifyAsync(
+                        $"{scraper.SourceName}:403",
+                        $"🚫 [{scraper.SourceName}] blocked — 403 Forbidden\n{DateTime.UtcNow:u}");
+                }
+                catch (HttpRequestException ex)
+                {
+                    var code = ex.StatusCode.HasValue ? (int)ex.StatusCode : 0;
+                    logger.LogWarning(ex, "Scraper {Source} HTTP error {Code}", scraper.SourceName, code);
+                    await adminNotifier.NotifyAsync(
+                        $"{scraper.SourceName}:http:{code}",
+                        $"⚠️ [{scraper.SourceName}] HTTP {code}\n{DateTime.UtcNow:u}");
+                }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Unhandled error in scraper {Source}", scraper.SourceName);
+                    await adminNotifier.NotifyAsync(
+                        $"{scraper.SourceName}:crash",
+                        $"❌ [{scraper.SourceName}] crashed: {ex.GetType().Name}: {ex.Message[..Math.Min(200, ex.Message.Length)]}\n{DateTime.UtcNow:u}");
                 }
 
                 if (!stoppingToken.IsCancellationRequested)
@@ -54,6 +74,10 @@ public sealed class ScraperWorker(
         if (listings.Count == 0)
         {
             logger.LogInformation("{Source} returned 0 listings", scraper.SourceName);
+            await adminNotifier.NotifyAsync(
+                $"{scraper.SourceName}:zero",
+                $"⚠️ [{scraper.SourceName}] returned 0 listings — site structure may have changed\n{DateTime.UtcNow:u}",
+                cooldown: TimeSpan.FromHours(4));
             return;
         }
 

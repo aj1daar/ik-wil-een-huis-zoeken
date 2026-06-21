@@ -39,19 +39,10 @@ public sealed class VestedaScraper : IPropertyScraper
             sortBy = "relevance",
         };
 
-        JsonElement root;
-        try
-        {
-            var response = await http.PostAsJsonAsync(SearchUrl, payload, ct);
-            response.EnsureSuccessStatusCode();
-            var json = await response.Content.ReadAsStringAsync(ct);
-            root = JsonSerializer.Deserialize<JsonElement>(json);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Vesteda fetch failed");
-            return [];
-        }
+        var response = await http.PostAsJsonAsync(SearchUrl, payload, ct);
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync(ct);
+        var root = JsonSerializer.Deserialize<JsonElement>(json);
 
         var listings = new List<ScrapedListing>();
 

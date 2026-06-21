@@ -22,16 +22,7 @@ public sealed class ParariusScraper : IPropertyScraper
     {
         using var http = ScraperHttpClientFactory.Create(_proxyUrl);
 
-        string html;
-        try
-        {
-            html = await http.GetStringAsync(BaseUrl, ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Pararius fetch failed");
-            return [];
-        }
+        var html = await http.GetStringAsync(BaseUrl, ct);
 
         var context = BrowsingContext.New(Configuration.Default);
         var document = await context.OpenAsync(req => req.Content(html), ct);

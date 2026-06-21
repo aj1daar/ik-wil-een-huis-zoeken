@@ -23,16 +23,7 @@ public sealed class HuurwoningenScraper : IPropertyScraper
         using var http = ScraperHttpClientFactory.Create(_proxyUrl);
         http.DefaultRequestHeaders.TryAddWithoutValidation("Referer", "https://www.huurwoningen.nl/");
 
-        string html;
-        try
-        {
-            html = await http.GetStringAsync(BaseUrl, ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Huurwoningen fetch failed");
-            return [];
-        }
+        var html = await http.GetStringAsync(BaseUrl, ct);
 
         var context = BrowsingContext.New(Configuration.Default);
         var document = await context.OpenAsync(req => req.Content(html), ct);

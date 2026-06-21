@@ -31,6 +31,7 @@ builder.Services.AddSingleton<IPropertyScraper, HuurwoningenScraper>();
 builder.Services.AddSingleton<UserService>();
 builder.Services.AddSingleton<CityService>();
 builder.Services.AddSingleton<NotificationDispatcher>();
+builder.Services.AddSingleton<AdminNotifier>();
 builder.Services.AddSingleton<MessageHandler>();
 
 builder.Services.AddHostedService<ScraperWorker>();

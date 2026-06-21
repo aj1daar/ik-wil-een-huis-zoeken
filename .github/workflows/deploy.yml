@@ -1,0 +1,98 @@
+name: Build, Test & Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore
+        run: dotnet restore IWEHZ.sln
+
+      - name: Build
+        run: dotnet build IWEHZ.sln --no-restore -c Release
+
+      - name: Test
+        run: dotnet test IWEHZ.sln --no-build -c Release --logger "github;verbosity=normal"
+
+  deploy:
+    name: Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Publish
+        run: dotnet publish IWEHZ.csproj -c Release -r linux-x64 --self-contained true -o ./publish
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Stop service
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "systemctl stop iwehz || true"
+
+      - name: Upload binary
+        run: |
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            ./publish/ \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/iwehz/publish/
+
+      - name: Write systemd unit
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "cat > /etc/systemd/system/iwehz.service << 'EOF'
+          [Unit]
+          Description=IWEHZ Rental Bot
+          After=network.target postgresql.service
+
+          [Service]
+          WorkingDirectory=/opt/iwehz/publish
+          ExecStart=/opt/iwehz/publish/IWEHZ
+          Restart=always
+          RestartSec=10
+          User=root
+          Environment=ASPNETCORE_ENVIRONMENT=Production
+          Environment=CONNECTIONSTRINGS__POSTGRES=${{ secrets.CONNECTIONSTRINGS__POSTGRES }}
+          Environment=TELEGRAM__BOTTOKEN=${{ secrets.TELEGRAM__BOTTOKEN }}
+          Environment=TELEGRAM__ADMINCHATID=${{ secrets.TELEGRAM__ADMINCHATID }}
+          Environment=SCRAPER__PROXYURL=${{ secrets.SCRAPER__PROXYURL }}
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF"
+
+      - name: Start service
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "chmod +x /opt/iwehz/publish/IWEHZ && \
+             mkdir -p /opt/iwehz/publish && \
+             systemctl daemon-reload && \
+             systemctl enable iwehz && \
+             systemctl start iwehz"
+
+      - name: Health check
+        run: |
+          sleep 8
+          ssh -i ~/.ssh/deploy_key ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "systemctl is-active iwehz && curl -sf http://localhost:5000/health"

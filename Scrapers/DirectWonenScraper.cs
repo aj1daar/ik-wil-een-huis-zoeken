@@ -7,6 +7,7 @@ namespace IWEHZ.Scrapers;
 public sealed class DirectWonenScraper : IPropertyScraper
 {
     private const string BaseUrl = "https://directwonen.nl/huurwoningen-huren/nederland";
+    private const string Domain = "https://directwonen.nl";
     private readonly string? _proxyUrl;
     private readonly ILogger<DirectWonenScraper> _logger;
 
@@ -34,25 +35,22 @@ public sealed class DirectWonenScraper : IPropertyScraper
         {
             try
             {
-                var href = anchor.GetAttribute("href") ?? string.Empty;
-                if (!TryParseListingHref(href, out var externalId)) continue;
+                var rawHref = anchor.GetAttribute("href") ?? string.Empty;
+                var path = ToPath(rawHref);
+                if (!TryParseListingPath(path, out var externalId)) continue;
 
                 var price = ScraperHelpers.ParsePrice(anchor.TextContent);
                 if (price <= 0) continue;
 
-                // h3 contains "StreetName, City"
                 var h3 = anchor.QuerySelector("h3");
                 var h3Text = h3?.TextContent.Trim() ?? string.Empty;
 
                 var commaIdx = h3Text.LastIndexOf(',');
-                var city = commaIdx >= 0
-                    ? h3Text[(commaIdx + 1)..].Trim()
-                    : string.Empty;
-
+                var city = commaIdx >= 0 ? h3Text[(commaIdx + 1)..].Trim() : string.Empty;
                 if (string.IsNullOrEmpty(city)) continue;
 
-                listings.Add(new ScrapedListing(externalId, h3Text, city, price,
-                    "https://directwonen.nl" + href, SourceName));
+                var url = path.StartsWith("http") ? path : Domain + path;
+                listings.Add(new ScrapedListing(externalId, h3Text, city, price, url, SourceName));
             }
             catch (Exception ex)
             {
@@ -63,12 +61,19 @@ public sealed class DirectWonenScraper : IPropertyScraper
         return listings;
     }
 
-    private static bool TryParseListingHref(string href, out string externalId)
+    private static string ToPath(string href)
+    {
+        if (Uri.TryCreate(href, UriKind.Absolute, out var uri))
+            return uri.AbsolutePath;
+        return href;
+    }
+
+    private static bool TryParseListingPath(string path, out string externalId)
     {
         externalId = string.Empty;
 
         // /huurwoningen-huren/{city}/{street}/{type}-{numericId}
-        var parts = href.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length != 4 || parts[0] != "huurwoningen-huren") return false;
 
         var lastSegment = parts[3];

@@ -1,3 +1,4 @@
+using System.Net;
 using AngleSharp;
 using AngleSharp.Html.Dom;
 using IWEHZ.Infrastructure.Http;
@@ -6,7 +7,15 @@ namespace IWEHZ.Scrapers;
 
 public sealed class HuurwoningenScraper : IPropertyScraper
 {
-    private const string BaseUrl = "https://www.huurwoningen.nl/huurwoningen/nederland/";
+    private static readonly string[] CitySlugs =
+    [
+        "amsterdam", "rotterdam", "utrecht", "eindhoven", "groningen",
+        "tilburg", "almere", "breda", "nijmegen", "haarlem",
+        "arnhem", "leiden", "maastricht", "delft", "dordrecht",
+        "zwolle", "amersfoort", "alkmaar",
+    ];
+
+    private const string BaseUrl = "https://www.huurwoningen.nl/in/";
     private readonly string? _proxyUrl;
     private readonly ILogger<HuurwoningenScraper> _logger;
 
@@ -20,10 +29,43 @@ public sealed class HuurwoningenScraper : IPropertyScraper
 
     public async Task<IReadOnlyList<ScrapedListing>> ScrapeAsync(CancellationToken ct)
     {
+        var listings = new List<ScrapedListing>();
+        var seen = new HashSet<string>();
+
+        foreach (var city in CitySlugs)
+        {
+            if (ct.IsCancellationRequested) break;
+
+            try
+            {
+                var cityListings = await ScrapeCityAsync(city, ct);
+                foreach (var listing in cityListings)
+                {
+                    if (seen.Add(listing.ExternalId))
+                        listings.Add(listing);
+                }
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+            {
+                // city slug not supported by huurwoningen.nl — skip
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(2), ct);
+        }
+
+        return listings;
+    }
+
+    private async Task<List<ScrapedListing>> ScrapeCityAsync(string citySlug, CancellationToken ct)
+    {
         using var http = ScraperHttpClientFactory.Create(_proxyUrl);
         http.DefaultRequestHeaders.TryAddWithoutValidation("Referer", "https://www.huurwoningen.nl/");
 
-        var html = await http.GetStringAsync(BaseUrl, ct);
+        var html = await http.GetStringAsync(BaseUrl + citySlug + "/", ct);
 
         var context = BrowsingContext.New(Configuration.Default);
         var document = await context.OpenAsync(req => req.Content(html), ct);
@@ -50,7 +92,7 @@ public sealed class HuurwoningenScraper : IPropertyScraper
                 var title = titleEl?.TextContent.Trim() ?? anchor.TextContent.Trim();
 
                 var cityEl = card.QuerySelector(".listing-search-item__location, .search-result__location, [class*='city'], [class*='location']");
-                var city = cityEl?.TextContent.Trim() ?? string.Empty;
+                var city = cityEl?.TextContent.Trim() ?? citySlug;
 
                 var priceEl = card.QuerySelector("[class*='price'], .listing-search-item__price");
                 var price = ScraperHelpers.ParsePrice(priceEl?.TextContent ?? string.Empty);
@@ -60,7 +102,7 @@ public sealed class HuurwoningenScraper : IPropertyScraper
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Huurwoningen: skipped malformed listing element");
+                _logger.LogDebug(ex, "Huurwoningen: skipped malformed listing");
             }
         }
 

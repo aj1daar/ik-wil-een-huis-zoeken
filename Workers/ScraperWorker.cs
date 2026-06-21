@@ -15,6 +15,14 @@ public sealed class ScraperWorker(
     IConfiguration config,
     ILogger<ScraperWorker> logger) : BackgroundService
 {
+    private static readonly HashSet<HttpStatusCode> RetryableCodes =
+    [
+        HttpStatusCode.InternalServerError,
+        HttpStatusCode.BadGateway,
+        HttpStatusCode.ServiceUnavailable,
+        HttpStatusCode.GatewayTimeout,
+    ];
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var minDelay = config.GetValue("Scraper:IntervalMinSeconds", 60);
@@ -30,7 +38,7 @@ public sealed class ScraperWorker(
             {
                 try
                 {
-                    await RunScraperAsync(scraper, stoppingToken);
+                    await RunWithRetryAsync(scraper, stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -61,6 +69,29 @@ public sealed class ScraperWorker(
 
                 if (!stoppingToken.IsCancellationRequested)
                     await Task.Delay(TimeSpan.FromSeconds(Random.Shared.Next(3, 9)), stoppingToken);
+            }
+        }
+    }
+
+    private async Task RunWithRetryAsync(IPropertyScraper scraper, CancellationToken ct)
+    {
+        const int maxAttempts = 3;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                await RunScraperAsync(scraper, ct);
+                return;
+            }
+            catch (HttpRequestException ex) when (
+                attempt < maxAttempts &&
+                ex.StatusCode.HasValue &&
+                RetryableCodes.Contains(ex.StatusCode.Value))
+            {
+                logger.LogWarning("Scraper {Source} attempt {Attempt}/{Max} got HTTP {Code}, retrying in {Delay}s",
+                    scraper.SourceName, attempt, maxAttempts, (int)ex.StatusCode.Value, attempt * 3);
+                await Task.Delay(TimeSpan.FromSeconds(attempt * 3), ct);
             }
         }
     }

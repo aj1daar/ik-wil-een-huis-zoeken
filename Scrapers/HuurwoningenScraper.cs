@@ -6,7 +6,7 @@ namespace IWEHZ.Scrapers;
 
 public sealed class HuurwoningenScraper : IPropertyScraper
 {
-    private const string BaseUrl = "https://www.huurwoningen.nl/huurwoningen/";
+    private const string BaseUrl = "https://www.huurwoningen.nl/huurwoningen/nederland/";
     private readonly string? _proxyUrl;
     private readonly ILogger<HuurwoningenScraper> _logger;
 

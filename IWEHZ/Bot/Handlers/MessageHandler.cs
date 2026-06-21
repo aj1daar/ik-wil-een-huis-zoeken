@@ -1,0 +1,332 @@
+using IWEHZ.Bot.Conversations;
+using IWEHZ.Services;
+using Telegram.Bot;
+using Telegram.Bot.Types;
+using Telegram.Bot.Types.ReplyMarkups;
+using DomainUser = IWEHZ.Domain.Models.User;
+using OnboardingState = IWEHZ.Domain.Models.OnboardingState;
+
+namespace IWEHZ.Bot.Handlers;
+
+public sealed class MessageHandler(
+    UserService userService,
+    CityService cityService,
+    ConversationStateCache stateCache,
+    IConfiguration config,
+    ILogger<MessageHandler> logger)
+{
+    private long AdminChatId => config.GetValue<long>("Telegram:AdminChatId");
+
+    public async Task HandleAsync(ITelegramBotClient bot, Message message, CancellationToken ct)
+    {
+        if (message.From is null || message.Text is null) return;
+
+        var chatId = message.Chat.Id;
+        var text = message.Text.Trim();
+        var username = message.From.Username;
+
+        if (text.StartsWith("/activate") && chatId == AdminChatId)
+        {
+            await HandleActivateCommandAsync(bot, text, ct);
+            return;
+        }
+
+        var user = await userService.GetByChatIdAsync(chatId, ct);
+
+        if (user is null)
+        {
+            user = await userService.RegisterAsync(chatId, username, ct);
+        }
+
+        if (!user.IsActive)
+        {
+            await bot.SendMessage(
+                chatId,
+                "👋 Welcome\\! To use this bot, please contact @atainogoibay to request access\\.",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                cancellationToken: ct);
+            return;
+        }
+
+        var step = stateCache.Get(chatId);
+
+        if (text == "/start")
+        {
+            await HandleStartAsync(bot, user, chatId, ct);
+            return;
+        }
+
+        if (text == "/settings")
+        {
+            await HandleSettingsAsync(bot, chatId, ct);
+            return;
+        }
+
+        if (text == "/mycities")
+        {
+            await HandleMyCitiesAsync(bot, user, chatId, ct);
+            return;
+        }
+
+        switch (step)
+        {
+            case ConversationStep.AwaitingBudget:
+            case ConversationStep.AwaitingNewBudget:
+                await HandleBudgetInputAsync(bot, user, chatId, text, step, ct);
+                break;
+
+            case ConversationStep.AwaitingCities:
+            case ConversationStep.AwaitingNewCities:
+                await HandleCitiesInputAsync(bot, user, chatId, text, step, ct);
+                break;
+
+            case ConversationStep.AwaitingSettingsChoice:
+                await HandleSettingsChoiceAsync(bot, chatId, text, ct);
+                break;
+
+            default:
+                await bot.SendMessage(chatId,
+                    "Use /start to begin onboarding or /settings to update your preferences\\.",
+                    parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                    cancellationToken: ct);
+                break;
+        }
+    }
+
+    private async Task HandleStartAsync(ITelegramBotClient bot, DomainUser user, long chatId, CancellationToken ct)
+    {
+        if (user.OnboardingState == OnboardingState.Completed)
+        {
+            await bot.SendMessage(chatId,
+                "You are already set up\\! Use /settings to update your preferences\\.",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                cancellationToken: ct);
+            return;
+        }
+
+        stateCache.Set(chatId, ConversationStep.AwaitingBudget);
+
+        var keyboard = new ReplyKeyboardMarkup(
+        [
+            [new KeyboardButton("€1000"), new KeyboardButton("€1500")],
+            [new KeyboardButton("€2000"), new KeyboardButton("€2500")],
+            [new KeyboardButton("€3000")],
+        ])
+        { ResizeKeyboard = true, OneTimeKeyboard = true };
+
+        await bot.SendMessage(chatId,
+            "👋 Let's get you set up\\!\n\nWhat is your *maximum monthly budget*?",
+            parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+            replyMarkup: keyboard,
+            cancellationToken: ct);
+    }
+
+    private async Task HandleBudgetInputAsync(
+        ITelegramBotClient bot, DomainUser user, long chatId, string text,
+        ConversationStep currentStep, CancellationToken ct)
+    {
+        var cleaned = new string(text.Where(c => char.IsDigit(c)).ToArray());
+
+        if (!decimal.TryParse(cleaned, out var budget) || budget < 100 || budget > 10000)
+        {
+            await bot.SendMessage(chatId,
+                "Please enter a valid budget between €100 and €10,000\\.",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                cancellationToken: ct);
+            return;
+        }
+
+        await userService.SetBudgetAsync(chatId, budget, ct);
+
+        var nextStep = currentStep == ConversationStep.AwaitingBudget
+            ? ConversationStep.AwaitingCities
+            : ConversationStep.AwaitingNewCities;
+
+        stateCache.Set(chatId, nextStep);
+
+        var cities = await cityService.GetAllActiveAsync(ct);
+        var cityList = string.Join(", ", cities.Select(c =>
+            c.NameNl == c.NameEn ? c.NameNl : $"{c.NameNl} / {c.NameEn}"));
+
+        await bot.SendMessage(chatId,
+            $"✅ Budget set to €{budget:N0}/month\\.\n\n" +
+            $"Now, which *cities* are you looking in?\n\n" +
+            $"Type the city names separated by commas, in Dutch or English\\.\n\n" +
+            $"*Available cities:*\n{EscapeMd(cityList)}",
+            parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+            replyMarkup: new ReplyKeyboardRemove(),
+            cancellationToken: ct);
+    }
+
+    private async Task HandleCitiesInputAsync(
+        ITelegramBotClient bot, DomainUser user, long chatId, string text,
+        ConversationStep currentStep, CancellationToken ct)
+    {
+        var inputs = text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (inputs.Length == 0)
+        {
+            await bot.SendMessage(chatId,
+                "Please enter at least one city\\.",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                cancellationToken: ct);
+            return;
+        }
+
+        var resolvedIds = new List<int>();
+        var unknowns = new List<string>();
+
+        foreach (var input in inputs)
+        {
+            var city = await cityService.FindByNameAsync(input, ct);
+            if (city is not null)
+                resolvedIds.Add(city.Id);
+            else
+                unknowns.Add(input);
+        }
+
+        if (unknowns.Count > 0)
+        {
+            var unknownList = string.Join(", ", unknowns.Select(EscapeMd));
+            var all = await cityService.GetAllActiveAsync(ct);
+            var available = string.Join(", ", all.Select(c =>
+                c.NameNl == c.NameEn ? c.NameNl : $"{c.NameNl}/{c.NameEn}"));
+
+            await bot.SendMessage(chatId,
+                $"❌ Unknown cities: *{unknownList}*\\.\n\n" +
+                $"Please use names from this list:\n{EscapeMd(available)}",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                cancellationToken: ct);
+            return;
+        }
+
+        await userService.SetCitiesAsync(chatId, resolvedIds, ct);
+        stateCache.Clear(chatId);
+
+        if (currentStep == ConversationStep.AwaitingCities)
+        {
+            await userService.CompleteOnboardingAsync(chatId, ct);
+            await bot.SendMessage(chatId,
+                "🎉 You're all set\\! You'll receive alerts when new listings match your criteria\\.",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                replyMarkup: new ReplyKeyboardRemove(),
+                cancellationToken: ct);
+        }
+        else
+        {
+            await bot.SendMessage(chatId,
+                "✅ Cities updated\\!",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                replyMarkup: new ReplyKeyboardRemove(),
+                cancellationToken: ct);
+        }
+    }
+
+    private async Task HandleSettingsAsync(ITelegramBotClient bot, long chatId, CancellationToken ct)
+    {
+        stateCache.Set(chatId, ConversationStep.AwaitingSettingsChoice);
+
+        var keyboard = new ReplyKeyboardMarkup(
+        [
+            [new KeyboardButton("Update budget"), new KeyboardButton("Update cities")],
+            [new KeyboardButton("Cancel")],
+        ])
+        { ResizeKeyboard = true, OneTimeKeyboard = true };
+
+        await bot.SendMessage(chatId,
+            "⚙️ *Settings* — what would you like to update?",
+            parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+            replyMarkup: keyboard,
+            cancellationToken: ct);
+    }
+
+    private async Task HandleSettingsChoiceAsync(ITelegramBotClient bot, long chatId, string text, CancellationToken ct)
+    {
+        if (text.Equals("Update budget", StringComparison.OrdinalIgnoreCase))
+        {
+            stateCache.Set(chatId, ConversationStep.AwaitingNewBudget);
+
+            var keyboard = new ReplyKeyboardMarkup(
+            [
+                [new KeyboardButton("€1000"), new KeyboardButton("€1500")],
+                [new KeyboardButton("€2000"), new KeyboardButton("€2500")],
+                [new KeyboardButton("€3000")],
+            ])
+            { ResizeKeyboard = true, OneTimeKeyboard = true };
+
+            await bot.SendMessage(chatId,
+                "Enter your new maximum monthly budget:",
+                replyMarkup: keyboard,
+                cancellationToken: ct);
+        }
+        else if (text.Equals("Update cities", StringComparison.OrdinalIgnoreCase))
+        {
+            stateCache.Set(chatId, ConversationStep.AwaitingNewCities);
+
+            var cities = await cityService.GetAllActiveAsync(ct);
+            var cityList = string.Join(", ", cities.Select(c =>
+                c.NameNl == c.NameEn ? c.NameNl : $"{c.NameNl}/{c.NameEn}"));
+
+            await bot.SendMessage(chatId,
+                $"Enter the new cities separated by commas:\n\n{EscapeMd(cityList)}",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                replyMarkup: new ReplyKeyboardRemove(),
+                cancellationToken: ct);
+        }
+        else
+        {
+            stateCache.Clear(chatId);
+            await bot.SendMessage(chatId, "Cancelled\\.",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                replyMarkup: new ReplyKeyboardRemove(),
+                cancellationToken: ct);
+        }
+    }
+
+    private async Task HandleMyCitiesAsync(ITelegramBotClient bot, DomainUser user, long chatId, CancellationToken ct)
+    {
+        var refreshed = await userService.GetByChatIdAsync(chatId, ct);
+        if (refreshed?.UserCities is null || refreshed.UserCities.Count == 0)
+        {
+            await bot.SendMessage(chatId, "You have no cities saved yet\\.",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                cancellationToken: ct);
+            return;
+        }
+
+        var list = string.Join("\n", refreshed.UserCities.Select(uc => $"• {uc.City.NameNl}"));
+        await bot.SendMessage(chatId,
+            $"📍 *Your cities:*\n{EscapeMd(list)}\n\n💶 *Max budget:* €{refreshed.MaxBudget:N0}/month",
+            parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+            cancellationToken: ct);
+    }
+
+    private async Task HandleActivateCommandAsync(ITelegramBotClient bot, string text, CancellationToken ct)
+    {
+        var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2 || !long.TryParse(parts[1], out var targetChatId))
+        {
+            await bot.SendMessage(AdminChatId, "Usage: /activate <telegram_chat_id>", cancellationToken: ct);
+            return;
+        }
+
+        await userService.ActivateAsync(targetChatId, ct);
+        await bot.SendMessage(AdminChatId, $"✅ User {targetChatId} activated.", cancellationToken: ct);
+
+        try
+        {
+            await bot.SendMessage(targetChatId,
+                "✅ Your access has been approved\\! Use /start to begin setup\\.",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                cancellationToken: ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not notify activated user {ChatId}", targetChatId);
+        }
+    }
+
+    private static string EscapeMd(string text) =>
+        text.Replace("_", "\\_").Replace("*", "\\*").Replace("[", "\\[").Replace("`", "\\`")
+            .Replace(".", "\\.").Replace("!", "\\!").Replace("-", "\\-").Replace("(", "\\(").Replace(")", "\\)");
+}

@@ -29,6 +29,7 @@ builder.Services.AddSingleton<IPropertyScraper, VestedaScraper>();
 builder.Services.AddSingleton<IPropertyScraper, HuurwoningenScraper>();
 builder.Services.AddSingleton<IPropertyScraper, KamernetScraper>();
 builder.Services.AddSingleton<IPropertyScraper, DirectWonenScraper>();
+builder.Services.AddSingleton<IPropertyScraper, NederwoonScraper>();
 
 builder.Services.AddSingleton<UserService>();
 builder.Services.AddSingleton<CityService>();

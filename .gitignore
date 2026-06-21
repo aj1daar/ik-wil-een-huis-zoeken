@@ -1,0 +1,30 @@
+# Build outputs
+bin/
+obj/
+*.user
+
+# Secrets & local config
+appsettings.Development.json
+appsettings.*.local.json
+.env
+*.env
+
+# Plan (internal)
+plan.md
+
+# IDE
+.vs/
+.vscode/
+*.suo
+*.swp
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# EF Core migrations snapshot backups
+*.bak
+
+# Publish output
+publish/

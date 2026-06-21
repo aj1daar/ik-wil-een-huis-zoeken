@@ -12,7 +12,7 @@ public sealed class HuurwoningenScraper : IPropertyScraper
 
     public string SourceName => "huurwoningen";
 
-    public HuurwoningenScraper(IConfiguration config, ILogger<HuurwoningenScraper> logger)
+    public HuurwoningenScraper(Microsoft.Extensions.Configuration.IConfiguration config, ILogger<HuurwoningenScraper> logger)
     {
         _proxyUrl = config["Scraper:ProxyUrl"];
         _logger = logger;

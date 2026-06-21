@@ -19,7 +19,7 @@ public static class ScraperHttpClientFactory
 
         if (!string.IsNullOrWhiteSpace(proxyUrl))
         {
-            var proxy = new WebProxy(proxyUrl, bypassOnLocal: false);
+            var proxy = new WebProxy(proxyUrl, BypassOnLocal: false);
             handler = new HttpClientHandler
             {
                 Proxy = proxy,

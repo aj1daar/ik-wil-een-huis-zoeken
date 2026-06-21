@@ -1,6 +1,7 @@
 using AngleSharp;
 using AngleSharp.Html.Dom;
 using IWEHZ.Infrastructure.Http;
+using Microsoft.Extensions.Configuration;
 
 namespace IWEHZ.Scrapers;
 
@@ -12,7 +13,7 @@ public sealed class ParariusScraper : IPropertyScraper
 
     public string SourceName => "pararius";
 
-    public ParariusScraper(IConfiguration config, ILogger<ParariusScraper> logger)
+    public ParariusScraper(Microsoft.Extensions.Configuration.IConfiguration config, ILogger<ParariusScraper> logger)
     {
         _proxyUrl = config["Scraper:ProxyUrl"];
         _logger = logger;

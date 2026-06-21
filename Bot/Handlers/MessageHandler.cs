@@ -42,12 +42,20 @@ public sealed class MessageHandler(
 
         if (!user.IsActive)
         {
-            await bot.SendMessage(
-                chatId,
-                "👋 Welcome\\! To use this bot, please contact @atainogoibay to request access\\.",
-                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
-                cancellationToken: ct);
-            return;
+            if (chatId == AdminChatId)
+            {
+                await userService.ActivateAsync(chatId, ct);
+                user = await userService.GetByChatIdAsync(chatId, ct) ?? user;
+            }
+            else
+            {
+                await bot.SendMessage(
+                    chatId,
+                    "👋 Welcome\\! To use this bot, please contact @atainogoibay to request access\\.",
+                    parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                    cancellationToken: ct);
+                return;
+            }
         }
 
         var step = stateCache.Get(chatId);

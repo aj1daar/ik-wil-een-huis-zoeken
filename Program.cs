@@ -28,19 +28,19 @@ builder.Services.AddSingleton<IPropertyScraper, ParariusScraper>();
 builder.Services.AddSingleton<IPropertyScraper, VestedaScraper>();
 builder.Services.AddSingleton<IPropertyScraper, HuurwoningenScraper>();
 
-builder.Services.AddScoped<UserService>();
-builder.Services.AddScoped<CityService>();
-builder.Services.AddScoped<NotificationDispatcher>();
-builder.Services.AddScoped<MessageHandler>();
+builder.Services.AddSingleton<UserService>();
+builder.Services.AddSingleton<CityService>();
+builder.Services.AddSingleton<NotificationDispatcher>();
+builder.Services.AddSingleton<MessageHandler>();
 
 builder.Services.AddHostedService<ScraperWorker>();
 builder.Services.AddHostedService<TelegramBotWorker>();
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
+var dbFactory = app.Services.GetRequiredService<IDbContextFactory<AppDbContext>>();
+await using (var db = await dbFactory.CreateDbContextAsync())
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await db.Database.MigrateAsync();
 }
 

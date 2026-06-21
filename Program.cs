@@ -27,6 +27,7 @@ builder.Services.AddSingleton<ConversationStateCache>();
 builder.Services.AddSingleton<IPropertyScraper, ParariusScraper>();
 builder.Services.AddSingleton<IPropertyScraper, VestedaScraper>();
 builder.Services.AddSingleton<IPropertyScraper, HuurwoningenScraper>();
+builder.Services.AddSingleton<IPropertyScraper, KamernetScraper>();
 
 builder.Services.AddSingleton<UserService>();
 builder.Services.AddSingleton<CityService>();

@@ -23,7 +23,7 @@ jobs:
         run: dotnet build IWEHZ.sln --no-restore -c Release
 
       - name: Test
-        run: dotnet test IWEHZ.sln --no-build -c Release --logger "github;verbosity=normal"
+        run: dotnet test IWEHZ.sln --no-build -c Release --logger "console;verbosity=normal"
 
   deploy:
     name: Deploy

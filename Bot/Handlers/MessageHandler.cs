@@ -1,6 +1,8 @@
 using IWEHZ.Bot.Conversations;
 using IWEHZ.Infrastructure.Markdown;
+using IWEHZ.Infrastructure.Persistence;
 using IWEHZ.Services;
+using Microsoft.EntityFrameworkCore;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -13,6 +15,7 @@ public sealed class MessageHandler(
     UserService userService,
     CityService cityService,
     ConversationStateCache stateCache,
+    IDbContextFactory<AppDbContext> dbFactory,
     IConfiguration config,
     ILogger<MessageHandler> logger)
 {
@@ -28,6 +31,12 @@ public sealed class MessageHandler(
         if (text.Length > 4096) return;
 
         var username = message.From.Username;
+
+        if (text == "/stats" && chatId == AdminChatId)
+        {
+            await HandleStatsAsync(bot, ct);
+            return;
+        }
 
         if (text.StartsWith("/activate") && chatId == AdminChatId)
         {
@@ -463,6 +472,36 @@ public sealed class MessageHandler(
         var list = string.Join("\n", refreshed.UserCities.Select(uc => $"• {uc.City.NameNl}"));
         await bot.SendMessage(chatId,
             $"📍 *Your cities:*\n{MarkdownHelper.EscapeV2(list)}\n\n💶 *Max budget:* €{refreshed.MaxBudget:N0}/month",
+            parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+            cancellationToken: ct);
+    }
+
+    private async Task HandleStatsAsync(ITelegramBotClient bot, CancellationToken ct)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+        var totalUsers = await db.Users.CountAsync(ct);
+        var activeUsers = await db.Users.CountAsync(u => u.IsActive && u.OnboardingState == OnboardingState.Completed, ct);
+        var pausedUsers = await db.Users.CountAsync(u => u.IsPaused, ct);
+        var totalListings = await db.RentalListings.CountAsync(ct);
+
+        var perSource = await db.RentalListings
+            .GroupBy(l => l.Source)
+            .Select(g => new { Source = g.Key, Count = g.Count(), Latest = g.Max(l => l.ScrapedAt) })
+            .OrderByDescending(x => x.Count)
+            .ToListAsync(ct);
+
+        var lines = new System.Text.StringBuilder();
+        lines.AppendLine("📊 *Bot stats*\n");
+        lines.AppendLine($"👥 Users: {activeUsers} active / {totalUsers} total / {pausedUsers} paused");
+        lines.AppendLine($"🏠 Listings in DB: {totalListings}\n");
+        lines.AppendLine("*Per source:*");
+
+        foreach (var s in perSource)
+            lines.AppendLine($"• {MarkdownHelper.EscapeV2(s.Source)}: {s.Count} listings \\(last: {MarkdownHelper.EscapeV2(s.Latest.ToString("MM/dd HH:mm"))} UTC\\)");
+
+        await bot.SendMessage(AdminChatId,
+            lines.ToString().TrimEnd(),
             parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
             cancellationToken: ct);
     }

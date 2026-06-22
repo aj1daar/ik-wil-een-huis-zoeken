@@ -19,7 +19,21 @@ public static class ScraperHttpClientFactory
 
         if (!string.IsNullOrWhiteSpace(proxyUrl))
         {
-            var proxy = new WebProxy(proxyUrl, BypassOnLocal: false);
+            var proxyUri = new Uri(proxyUrl);
+            var proxy = new WebProxy(proxyUri.GetLeftPart(UriPartial.Authority), BypassOnLocal: false);
+
+            if (!string.IsNullOrEmpty(proxyUri.UserInfo))
+            {
+                var colonIdx = proxyUri.UserInfo.IndexOf(':');
+                var user = colonIdx >= 0
+                    ? Uri.UnescapeDataString(proxyUri.UserInfo[..colonIdx])
+                    : Uri.UnescapeDataString(proxyUri.UserInfo);
+                var pass = colonIdx >= 0
+                    ? Uri.UnescapeDataString(proxyUri.UserInfo[(colonIdx + 1)..])
+                    : string.Empty;
+                proxy.Credentials = new NetworkCredential(user, pass);
+            }
+
             handler = new HttpClientHandler
             {
                 Proxy = proxy,

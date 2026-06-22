@@ -59,6 +59,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Title).HasColumnName("title").HasMaxLength(500);
             e.Property(x => x.City).HasColumnName("city").HasMaxLength(100);
             e.Property(x => x.Price).HasColumnName("price").HasColumnType("numeric(10,2)");
+            e.Property(x => x.PreviousPrice).HasColumnName("previous_price").HasColumnType("numeric(10,2)");
             e.Property(x => x.SourceUrl).HasColumnName("source_url").HasMaxLength(2000);
             e.Property(x => x.ScrapedAt).HasColumnName("scraped_at");
             e.HasIndex(x => new { x.ExternalId, x.Source }).IsUnique();

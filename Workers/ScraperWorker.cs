@@ -133,14 +133,29 @@ public sealed class ScraperWorker(
         await using var db = await dbFactory.CreateDbContextAsync(ct);
 
         var newEntities = new List<RentalListing>();
+        var priceDropEntities = new List<RentalListing>();
 
         foreach (var scraped in listings)
         {
-            var exists = await db.RentalListings
-                .AsNoTracking()
-                .AnyAsync(l => l.ExternalId == scraped.ExternalId && l.Source == scraped.Source, ct);
+            var existing = await db.RentalListings
+                .FirstOrDefaultAsync(l => l.ExternalId == scraped.ExternalId && l.Source == scraped.Source, ct);
 
-            if (exists) continue;
+            if (existing is not null)
+            {
+                if (scraped.Price < existing.Price)
+                {
+                    await db.RentalListings
+                        .Where(l => l.Id == existing.Id)
+                        .ExecuteUpdateAsync(s => s
+                            .SetProperty(l => l.PreviousPrice, existing.Price)
+                            .SetProperty(l => l.Price, scraped.Price), ct);
+
+                    existing.PreviousPrice = existing.Price;
+                    existing.Price = scraped.Price;
+                    priceDropEntities.Add(existing);
+                }
+                continue;
+            }
 
             var entity = new RentalListing
             {
@@ -160,5 +175,8 @@ public sealed class ScraperWorker(
 
         if (newEntities.Count > 0)
             await dispatcher.DispatchBatchAsync(newEntities, ct);
+
+        if (priceDropEntities.Count > 0)
+            await dispatcher.DispatchPriceDropsAsync(priceDropEntities, ct);
     }
 }

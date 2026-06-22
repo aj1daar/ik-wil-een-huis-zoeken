@@ -72,6 +72,59 @@ public sealed class NotificationDispatcher(
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task DispatchPriceDropsAsync(IReadOnlyList<RentalListing> listings, CancellationToken ct)
+    {
+        if (listings.Count == 0) return;
+
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+        var users = await db.Users
+            .AsNoTracking()
+            .Include(u => u.UserCities)
+            .ThenInclude(uc => uc.City)
+            .Where(u => u.IsActive && u.OnboardingState == OnboardingState.Completed)
+            .ToListAsync(ct);
+
+        foreach (var user in users)
+        {
+            var matched = listings.Where(listing =>
+            {
+                if (user.MaxBudget.HasValue && listing.Price > user.MaxBudget.Value) return false;
+                var cityNorm = listing.City.Trim().ToLowerInvariant();
+                return user.UserCities.Any(uc =>
+                    uc.City.NameNl.ToLowerInvariant() == cityNorm ||
+                    uc.City.NameEn.ToLowerInvariant() == cityNorm);
+            }).ToList();
+
+            if (matched.Count == 0) continue;
+
+            foreach (var listing in matched)
+            {
+                var drop = listing.PreviousPrice!.Value - listing.Price;
+                var msg =
+                    $"📉 *Price drop\\!*\n\n" +
+                    $"*{MarkdownHelper.EscapeV2(listing.Title)}*\n" +
+                    $"📍 {MarkdownHelper.EscapeV2(listing.City)}\n" +
+                    $"💶 ~~€{listing.PreviousPrice.Value:N0}~~ → *€{listing.Price:N0}*/month \\(\\-€{drop:N0}\\)\n" +
+                    $"🔗 [View listing]({MarkdownHelper.EscapeV2(listing.SourceUrl)})\n" +
+                    $"_Source: {MarkdownHelper.EscapeV2(listing.Source)}_";
+
+                try
+                {
+                    await bot.SendMessage(
+                        chatId: user.TelegramChatId,
+                        text: msg,
+                        parseMode: ParseMode.MarkdownV2,
+                        cancellationToken: ct);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to send price drop to user {UserId}", user.Id);
+                }
+            }
+        }
+    }
+
     private async Task SendAlertAsync(User user, List<RentalListing> listings, CancellationToken ct)
     {
         var message = listings.Count == 1

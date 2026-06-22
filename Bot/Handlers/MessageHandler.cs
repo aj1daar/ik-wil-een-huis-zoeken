@@ -84,6 +84,12 @@ public sealed class MessageHandler(
             return;
         }
 
+        if (text == "/help")
+        {
+            await HandleHelpAsync(bot, chatId, ct);
+            return;
+        }
+
         switch (step)
         {
             case ConversationStep.AwaitingBudget:
@@ -102,7 +108,7 @@ public sealed class MessageHandler(
 
             default:
                 await bot.SendMessage(chatId,
-                    "Use /start to begin onboarding or /settings to update your preferences\\.",
+                    "Use /help to see all available commands\\.",
                     parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
                     cancellationToken: ct);
                 break;
@@ -304,6 +310,21 @@ public sealed class MessageHandler(
                 replyMarkup: new ReplyKeyboardRemove(),
                 cancellationToken: ct);
         }
+    }
+
+    private static async Task HandleHelpAsync(ITelegramBotClient bot, long chatId, CancellationToken ct)
+    {
+        await bot.SendMessage(chatId,
+            "📋 *Available commands*\n\n" +
+            "/start \\— Set up your profile\n" +
+            "/status \\— View your current settings\n" +
+            "/settings \\— Update budget or cities\n" +
+            "/pause \\— Pause notifications temporarily\n" +
+            "/resume \\— Resume notifications\n" +
+            "/mycities \\— View your saved cities\n" +
+            "/help \\— Show this message",
+            parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+            cancellationToken: ct);
     }
 
     private async Task HandleStatusAsync(ITelegramBotClient bot, long chatId, CancellationToken ct)

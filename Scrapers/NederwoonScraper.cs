@@ -116,9 +116,9 @@ public sealed class NederwoonScraper : IPropertyScraper
         externalId = string.Empty;
         city = string.Empty;
 
-        // /huurwoning/{city}/{numericId}/{slug}
+        // /huurwoning/{city}/{numericId} or /huurwoning/{city}/{numericId}/{slug}
         var parts = href.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length != 4 || parts[0] != "huurwoning") return false;
+        if (parts.Length < 3 || parts[0] != "huurwoning") return false;
         if (!long.TryParse(parts[2], out _)) return false;
 
         externalId = parts[2];

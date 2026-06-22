@@ -73,17 +73,21 @@ public sealed class WonenScraper123 : IPropertyScraper
 
         var listings = new List<ScrapedListing>();
 
-        foreach (var anchor in document.QuerySelectorAll("a[href]").OfType<IHtmlAnchorElement>())
+        foreach (var card in document.QuerySelectorAll("div.pandlist-container"))
         {
             try
             {
+                var anchor = card.QuerySelector("a.textlink-design[href]") as IHtmlAnchorElement;
+                if (anchor is null) continue;
+
                 var href = anchor.GetAttribute("href") ?? string.Empty;
                 if (!TryParseListingHref(href, out var externalId, out var city)) continue;
 
-                var price = ScraperHelpers.ParsePrice(anchor.TextContent);
+                var price = ScraperHelpers.ParsePrice(card.QuerySelector(".pand-price")?.TextContent ?? string.Empty);
                 if (price <= 0) continue;
 
-                var title = anchor.QuerySelector("h2, h3")?.TextContent.Trim()
+                var title = card.QuerySelector(".pand-title")?.TextContent.Trim()
+                    ?? card.QuerySelector(".pand-slogan span")?.TextContent.Trim()
                     ?? $"Huurwoning {city}";
 
                 var fullUrl = href.StartsWith("http") ? href : "https://www.123wonen.nl" + href;

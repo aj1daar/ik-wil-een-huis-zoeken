@@ -23,6 +23,45 @@ public sealed class MessageHandler(
 {
     private long AdminChatId => config.GetValue<long>("Telegram:AdminChatId");
 
+    private static InlineKeyboardMarkup BuildMainMenu(bool isPaused) => new(
+    [
+        [
+            InlineKeyboardButton.WithCallbackData("📊 Status", "menu:status"),
+            InlineKeyboardButton.WithCallbackData("⚙️ Settings", "menu:settings"),
+        ],
+        [
+            InlineKeyboardButton.WithCallbackData(isPaused ? "▶️ Resume" : "⏸ Pause", isPaused ? "menu:resume" : "menu:pause"),
+            InlineKeyboardButton.WithCallbackData("📍 My Cities", "menu:mycities"),
+        ],
+        [
+            InlineKeyboardButton.WithCallbackData("➕ More", "menu:more"),
+        ],
+    ]);
+
+    private static readonly InlineKeyboardMarkup MoreMenu = new(
+    [
+        [
+            InlineKeyboardButton.WithCallbackData("💶 Min Budget", "menu:minbudget"),
+            InlineKeyboardButton.WithCallbackData("🏠 Property Type", "menu:proptype"),
+        ],
+        [
+            InlineKeyboardButton.WithCallbackData("📋 Help", "menu:help"),
+            InlineKeyboardButton.WithCallbackData("🔙 Back", "menu:back"),
+        ],
+    ]);
+
+    private static readonly InlineKeyboardMarkup PropTypeKeyboard = new(
+    [
+        [
+            InlineKeyboardButton.WithCallbackData("🏠 Any", "proptype:Any"),
+            InlineKeyboardButton.WithCallbackData("🏢 Apartment", "proptype:Apartment"),
+        ],
+        [
+            InlineKeyboardButton.WithCallbackData("🏡 House", "proptype:House"),
+            InlineKeyboardButton.WithCallbackData("🛏 Room", "proptype:Room"),
+        ],
+    ]);
+
     public async Task HandleAsync(ITelegramBotClient bot, Message message, CancellationToken ct)
     {
         if (message.From is null || message.Text is null) return;
@@ -77,6 +116,12 @@ public sealed class MessageHandler(
             return;
         }
 
+        if (text is "/menu" or "/help")
+        {
+            await SendMainMenuAsync(bot, chatId, user.IsPaused, ct);
+            return;
+        }
+
         if (text == "/settings")
         {
             await HandleSettingsAsync(bot, chatId, ct);
@@ -92,12 +137,6 @@ public sealed class MessageHandler(
         if (text == "/status")
         {
             await HandleStatusAsync(bot, chatId, ct);
-            return;
-        }
-
-        if (text == "/help")
-        {
-            await HandleHelpAsync(bot, chatId, ct);
             return;
         }
 
@@ -138,10 +177,7 @@ public sealed class MessageHandler(
                 break;
 
             default:
-                await bot.SendMessage(chatId,
-                    "Use /help to see all available commands\\.",
-                    parseMode: ParseMode.MarkdownV2,
-                    cancellationToken: ct);
+                await SendMainMenuAsync(bot, chatId, user.IsPaused, ct);
                 break;
         }
     }
@@ -149,28 +185,89 @@ public sealed class MessageHandler(
     public async Task HandleCallbackAsync(ITelegramBotClient bot, CallbackQuery query, CancellationToken ct)
     {
         var chatId = query.Message!.Chat.Id;
+        var messageId = query.Message.MessageId;
         var data = query.Data ?? string.Empty;
 
         await bot.AnswerCallbackQuery(query.Id, cancellationToken: ct);
 
         switch (data)
         {
+            case "menu:status":
+                await HandleStatusAsync(bot, chatId, ct);
+                break;
+
+            case "menu:settings":
+                await HandleSettingsAsync(bot, chatId, ct);
+                break;
+
+            case "menu:mycities":
+                var userForCities = await userService.GetByChatIdAsync(chatId, ct);
+                if (userForCities is not null)
+                    await HandleMyCitiesAsync(bot, userForCities, chatId, ct);
+                break;
+
+            case "menu:pause":
+                await userService.SetPausedAsync(chatId, true, ct);
+                await bot.EditMessageReplyMarkup(chatId, messageId, BuildMainMenu(isPaused: true), cancellationToken: ct);
+                await bot.SendMessage(chatId, "⏸ Notifications paused\\.", parseMode: ParseMode.MarkdownV2, cancellationToken: ct);
+                break;
+
+            case "menu:resume":
+                await userService.SetPausedAsync(chatId, false, ct);
+                await bot.EditMessageReplyMarkup(chatId, messageId, BuildMainMenu(isPaused: false), cancellationToken: ct);
+                await bot.SendMessage(chatId, "▶️ Notifications resumed\\.", parseMode: ParseMode.MarkdownV2, cancellationToken: ct);
+                break;
+
+            case "menu:more":
+                await bot.EditMessageReplyMarkup(chatId, messageId, MoreMenu, cancellationToken: ct);
+                break;
+
+            case "menu:back":
+                var userForBack = await userService.GetByChatIdAsync(chatId, ct);
+                await bot.EditMessageReplyMarkup(chatId, messageId, BuildMainMenu(userForBack?.IsPaused ?? false), cancellationToken: ct);
+                break;
+
+            case "menu:help":
+                await SendHelpMessageAsync(bot, chatId, ct);
+                break;
+
+            case "menu:minbudget":
+                stateCache.Set(chatId, ConversationStep.AwaitingNewMinBudget);
+                var minBudgetKeyboard = new ReplyKeyboardMarkup(
+                [
+                    [new KeyboardButton("€500"), new KeyboardButton("€700"), new KeyboardButton("€800")],
+                    [new KeyboardButton("€1000"), new KeyboardButton("No minimum")],
+                ])
+                { ResizeKeyboard = true, OneTimeKeyboard = true };
+                await bot.SendMessage(chatId,
+                    "Enter your *minimum monthly budget* \\(or 'No minimum'\\):",
+                    parseMode: ParseMode.MarkdownV2,
+                    replyMarkup: minBudgetKeyboard,
+                    cancellationToken: ct);
+                break;
+
+            case "menu:proptype":
+                stateCache.Clear(chatId);
+                await bot.SendMessage(chatId,
+                    "Select the *property type* you want to be notified about:",
+                    parseMode: ParseMode.MarkdownV2,
+                    replyMarkup: new ReplyKeyboardRemove(),
+                    cancellationToken: ct);
+                await bot.SendMessage(chatId, "👇", replyMarkup: PropTypeKeyboard, cancellationToken: ct);
+                break;
+
             case "pause":
                 await userService.SetPausedAsync(chatId, true, ct);
-                await bot.EditMessageReplyMarkup(
-                    chatId, query.Message.MessageId,
-                    new InlineKeyboardMarkup(
-                        InlineKeyboardButton.WithCallbackData("▶️ Resume notifications", "resume")),
+                await bot.EditMessageReplyMarkup(chatId, messageId,
+                    new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("▶️ Resume notifications", "resume")),
                     cancellationToken: ct);
                 await bot.SendMessage(chatId, "⏸ Notifications paused\\.", parseMode: ParseMode.MarkdownV2, cancellationToken: ct);
                 break;
 
             case "resume":
                 await userService.SetPausedAsync(chatId, false, ct);
-                await bot.EditMessageReplyMarkup(
-                    chatId, query.Message.MessageId,
-                    new InlineKeyboardMarkup(
-                        InlineKeyboardButton.WithCallbackData("⏸ Pause notifications", "pause")),
+                await bot.EditMessageReplyMarkup(chatId, messageId,
+                    new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData("⏸ Pause notifications", "pause")),
                     cancellationToken: ct);
                 await bot.SendMessage(chatId, "▶️ Notifications resumed\\.", parseMode: ParseMode.MarkdownV2, cancellationToken: ct);
                 break;
@@ -210,8 +307,9 @@ public sealed class MessageHandler(
         if (user.OnboardingState == OnboardingState.Completed)
         {
             await bot.SendMessage(chatId,
-                "You are already set up\\! Use /settings to update your preferences\\.",
+                "You are already set up\\! Here's your menu:",
                 parseMode: ParseMode.MarkdownV2,
+                replyMarkup: BuildMainMenu(user.IsPaused),
                 cancellationToken: ct);
             return;
         }
@@ -288,25 +386,12 @@ public sealed class MessageHandler(
         {
             stateCache.Set(chatId, ConversationStep.AwaitingPropertyType);
 
-            var keyboard = new InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton.WithCallbackData("🏠 Any", "proptype:Any"),
-                    InlineKeyboardButton.WithCallbackData("🏢 Apartment", "proptype:Apartment"),
-                ],
-                [
-                    InlineKeyboardButton.WithCallbackData("🏡 House", "proptype:House"),
-                    InlineKeyboardButton.WithCallbackData("🛏 Room", "proptype:Room"),
-                ],
-            ]);
-
             await bot.SendMessage(chatId,
-                $"✅ Max budget: €{budget:N0}/month\\.\n\n" +
-                "What *property type* are you looking for?",
+                $"✅ Max budget: €{budget:N0}/month\\.\n\nWhat *property type* are you looking for?",
                 parseMode: ParseMode.MarkdownV2,
                 replyMarkup: new ReplyKeyboardRemove(),
                 cancellationToken: ct);
-            await bot.SendMessage(chatId, "👇", replyMarkup: keyboard, cancellationToken: ct);
+            await bot.SendMessage(chatId, "👇", replyMarkup: PropTypeKeyboard, cancellationToken: ct);
         }
         else
         {
@@ -317,8 +402,7 @@ public sealed class MessageHandler(
                 c.NameNl == c.NameEn ? c.NameNl : $"{c.NameNl}/{c.NameEn}"));
 
             await bot.SendMessage(chatId,
-                $"✅ Budget updated to €{budget:N0}/month\\.\n\n" +
-                $"Enter the new cities separated by commas:\n\n{MarkdownHelper.EscapeV2(cityList)}",
+                $"✅ Budget updated to €{budget:N0}/month\\.\n\nEnter the new cities separated by commas:\n\n{MarkdownHelper.EscapeV2(cityList)}",
                 parseMode: ParseMode.MarkdownV2,
                 replyMarkup: new ReplyKeyboardRemove(),
                 cancellationToken: ct);
@@ -369,8 +453,7 @@ public sealed class MessageHandler(
                 c.NameNl == c.NameEn ? c.NameNl : $"{c.NameNl}/{c.NameEn}"));
 
             await bot.SendMessage(chatId,
-                $"❌ Unknown cities: *{unknownList}*\\.\n\n" +
-                $"Please use names from this list:\n{MarkdownHelper.EscapeV2(available)}",
+                $"❌ Unknown cities: *{unknownList}*\\.\n\nPlease use names from this list:\n{MarkdownHelper.EscapeV2(available)}",
                 parseMode: ParseMode.MarkdownV2,
                 cancellationToken: ct);
             return;
@@ -387,6 +470,7 @@ public sealed class MessageHandler(
                 parseMode: ParseMode.MarkdownV2,
                 replyMarkup: new ReplyKeyboardRemove(),
                 cancellationToken: ct);
+            await SendMainMenuAsync(bot, chatId, isPaused: false, ct);
         }
         else
         {
@@ -431,10 +515,8 @@ public sealed class MessageHandler(
             ])
             { ResizeKeyboard = true, OneTimeKeyboard = true };
 
-            await bot.SendMessage(chatId,
-                "Enter your new maximum monthly budget:",
-                replyMarkup: keyboard,
-                cancellationToken: ct);
+            await bot.SendMessage(chatId, "Enter your new maximum monthly budget:",
+                replyMarkup: keyboard, cancellationToken: ct);
         }
         else if (text.Equals("Update min budget", StringComparison.OrdinalIgnoreCase))
         {
@@ -456,23 +538,12 @@ public sealed class MessageHandler(
         else if (text.Equals("Update property type", StringComparison.OrdinalIgnoreCase))
         {
             stateCache.Clear(chatId);
-            var keyboard = new InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton.WithCallbackData("🏠 Any", "proptype:Any"),
-                    InlineKeyboardButton.WithCallbackData("🏢 Apartment", "proptype:Apartment"),
-                ],
-                [
-                    InlineKeyboardButton.WithCallbackData("🏡 House", "proptype:House"),
-                    InlineKeyboardButton.WithCallbackData("🛏 Room", "proptype:Room"),
-                ],
-            ]);
             await bot.SendMessage(chatId,
                 "Select the *property type* you want to be notified about:",
                 parseMode: ParseMode.MarkdownV2,
                 replyMarkup: new ReplyKeyboardRemove(),
                 cancellationToken: ct);
-            await bot.SendMessage(chatId, "👇", replyMarkup: keyboard, cancellationToken: ct);
+            await bot.SendMessage(chatId, "👇", replyMarkup: PropTypeKeyboard, cancellationToken: ct);
         }
         else if (text.Equals("Update cities", StringComparison.OrdinalIgnoreCase))
         {
@@ -546,21 +617,6 @@ public sealed class MessageHandler(
             cancellationToken: ct);
     }
 
-    private static async Task HandleHelpAsync(ITelegramBotClient bot, long chatId, CancellationToken ct)
-    {
-        await bot.SendMessage(chatId,
-            "📋 *Available commands*\n\n" +
-            "/start \\— Set up your profile\n" +
-            "/status \\— View your current settings\n" +
-            "/settings \\— Update budget or cities\n" +
-            "/pause \\— Pause notifications temporarily\n" +
-            "/resume \\— Resume notifications\n" +
-            "/mycities \\— View your saved cities\n" +
-            "/help \\— Show this message",
-            parseMode: ParseMode.MarkdownV2,
-            cancellationToken: ct);
-    }
-
     private async Task HandleStatusAsync(ITelegramBotClient bot, long chatId, CancellationToken ct)
     {
         var user = await userService.GetByChatIdAsync(chatId, ct);
@@ -577,26 +633,19 @@ public sealed class MessageHandler(
 
         var cities = user.UserCities?.Select(uc => uc.City.NameNl).ToList() ?? [];
         var cityList = cities.Count > 0 ? string.Join(", ", cities) : "none";
-
         var minBudget = user.MinBudget.HasValue ? $"€{user.MinBudget.Value:N0}" : "none";
         var budget = user.MaxBudget.HasValue ? $"€{user.MaxBudget.Value:N0}/month" : "no limit";
         var pauseState = user.IsPaused ? "⏸ Paused" : "▶️ Active";
         var propType = user.PropertyTypeFilter.ToString();
-
-        var toggleButton = new InlineKeyboardMarkup(
-            InlineKeyboardButton.WithCallbackData(
-                user.IsPaused ? "▶️ Resume notifications" : "⏸ Pause notifications",
-                user.IsPaused ? "resume" : "pause"));
 
         await bot.SendMessage(chatId,
             $"📊 *Your status*\n\n" +
             $"🔔 *Notifications:* {MarkdownHelper.EscapeV2(pauseState)}\n" +
             $"💶 *Budget:* {MarkdownHelper.EscapeV2(minBudget)} – {MarkdownHelper.EscapeV2(budget)}\n" +
             $"🏠 *Property type:* {MarkdownHelper.EscapeV2(propType)}\n" +
-            $"📍 *Cities:* {MarkdownHelper.EscapeV2(cityList)}\n\n" +
-            $"Use /settings to update your preferences\\.",
+            $"📍 *Cities:* {MarkdownHelper.EscapeV2(cityList)}",
             parseMode: ParseMode.MarkdownV2,
-            replyMarkup: toggleButton,
+            replyMarkup: BuildMainMenu(user.IsPaused),
             cancellationToken: ct);
     }
 
@@ -671,6 +720,29 @@ public sealed class MessageHandler(
         {
             logger.LogWarning(ex, "Could not notify activated user {ChatId}", targetChatId);
         }
+    }
+
+    private async Task SendMainMenuAsync(ITelegramBotClient bot, long chatId, bool isPaused, CancellationToken ct)
+    {
+        await bot.SendMessage(chatId,
+            "What would you like to do?",
+            replyMarkup: BuildMainMenu(isPaused),
+            cancellationToken: ct);
+    }
+
+    private static async Task SendHelpMessageAsync(ITelegramBotClient bot, long chatId, CancellationToken ct)
+    {
+        await bot.SendMessage(chatId,
+            "📋 *Available commands*\n\n" +
+            "/start \\— Set up your profile\n" +
+            "/menu \\— Open the main menu\n" +
+            "/status \\— View your current settings\n" +
+            "/settings \\— Update budget or cities\n" +
+            "/pause \\— Pause notifications temporarily\n" +
+            "/resume \\— Resume notifications\n" +
+            "/mycities \\— View your saved cities",
+            parseMode: ParseMode.MarkdownV2,
+            cancellationToken: ct);
     }
 
     private async Task SendCityPromptAsync(ITelegramBotClient bot, long chatId, string prefix, CancellationToken ct)

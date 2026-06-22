@@ -23,7 +23,8 @@ public sealed class HuurwoningenScraper : IPropertyScraper
 
     public HuurwoningenScraper(Microsoft.Extensions.Configuration.IConfiguration config, ILogger<HuurwoningenScraper> logger)
     {
-        _proxyUrl = config["Scraper:ProxyUrl"];
+        var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
+        _proxyUrl = sourceOverride is not null ? sourceOverride : config["Scraper:ProxyUrl"];
         _logger = logger;
     }
 

@@ -13,7 +13,8 @@ public sealed class VestedaScraper : IPropertyScraper
 
     public VestedaScraper(IConfiguration config, ILogger<VestedaScraper> logger)
     {
-        _proxyUrl = config["Scraper:ProxyUrl"];
+        var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
+        _proxyUrl = sourceOverride is not null ? sourceOverride : config["Scraper:ProxyUrl"];
         _logger = logger;
     }
 

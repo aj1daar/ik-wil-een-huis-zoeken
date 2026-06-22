@@ -90,6 +90,18 @@ public sealed class MessageHandler(
             return;
         }
 
+        if (text == "/pause")
+        {
+            await HandlePauseAsync(bot, chatId, true, ct);
+            return;
+        }
+
+        if (text == "/resume")
+        {
+            await HandlePauseAsync(bot, chatId, false, ct);
+            return;
+        }
+
         switch (step)
         {
             case ConversationStep.AwaitingBudget:
@@ -312,6 +324,24 @@ public sealed class MessageHandler(
         }
     }
 
+    private async Task HandlePauseAsync(ITelegramBotClient bot, long chatId, bool pause, CancellationToken ct)
+    {
+        await userService.SetPausedAsync(chatId, pause, ct);
+
+        var toggleButton = new InlineKeyboardMarkup(
+            InlineKeyboardButton.WithCallbackData(
+                pause ? "▶️ Resume notifications" : "⏸ Pause notifications",
+                pause ? "resume" : "pause"));
+
+        await bot.SendMessage(chatId,
+            pause
+                ? "⏸ *Notifications paused*\\. You won't receive any alerts until you resume\\."
+                : "▶️ *Notifications resumed*\\. You'll receive alerts again\\.",
+            parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+            replyMarkup: toggleButton,
+            cancellationToken: ct);
+    }
+
     private static async Task HandleHelpAsync(ITelegramBotClient bot, long chatId, CancellationToken ct)
     {
         await bot.SendMessage(chatId,
@@ -350,12 +380,20 @@ public sealed class MessageHandler(
             ? $"€{user.MaxBudget.Value:N0}/month"
             : "no limit";
 
+        var pauseState = user.IsPaused ? "⏸ Paused" : "▶️ Active";
+        var toggleButton = new InlineKeyboardMarkup(
+            InlineKeyboardButton.WithCallbackData(
+                user.IsPaused ? "▶️ Resume notifications" : "⏸ Pause notifications",
+                user.IsPaused ? "resume" : "pause"));
+
         await bot.SendMessage(chatId,
             $"📊 *Your status*\n\n" +
+            $"🔔 *Notifications:* {MarkdownHelper.EscapeV2(pauseState)}\n" +
             $"💶 *Budget:* {MarkdownHelper.EscapeV2(budget)}\n" +
             $"📍 *Cities:* {MarkdownHelper.EscapeV2(cityList)}\n\n" +
             $"Use /settings to update your preferences\\.",
             parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+            replyMarkup: toggleButton,
             cancellationToken: ct);
     }
 

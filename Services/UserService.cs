@@ -70,6 +70,15 @@ public sealed class UserService(IDbContextFactory<AppDbContext> dbFactory)
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task SetPausedAsync(long chatId, bool paused, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var user = await db.Users.FirstOrDefaultAsync(u => u.TelegramChatId == chatId, ct);
+        if (user is null) return;
+        user.IsPaused = paused;
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task ActivateAsync(long chatId, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);

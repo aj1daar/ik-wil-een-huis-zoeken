@@ -35,6 +35,7 @@ public sealed class NotificationDispatcher(
             .ThenInclude(uc => uc.City)
             .Where(u =>
                 u.IsActive &&
+                !u.IsPaused &&
                 u.OnboardingState == OnboardingState.Completed &&
                 (u.MaxBudget == null || u.MaxBudget >= listings.Min(l => l.Price)))
             .ToListAsync(ct);
@@ -82,7 +83,7 @@ public sealed class NotificationDispatcher(
             .AsNoTracking()
             .Include(u => u.UserCities)
             .ThenInclude(uc => uc.City)
-            .Where(u => u.IsActive && u.OnboardingState == OnboardingState.Completed)
+            .Where(u => u.IsActive && !u.IsPaused && u.OnboardingState == OnboardingState.Completed)
             .ToListAsync(ct);
 
         foreach (var user in users)

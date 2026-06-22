@@ -23,6 +23,8 @@ public sealed class ScraperWorker(
         HttpStatusCode.GatewayTimeout,
     ];
 
+    private readonly Dictionary<string, DateTime> _lastRun = new();
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var minDelay = config.GetValue("Scraper:IntervalMinSeconds", 60);
@@ -30,12 +32,11 @@ public sealed class ScraperWorker(
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            var delay = TimeSpan.FromSeconds(Random.Shared.Next(minDelay, maxDelay + 1));
-
-            await Task.Delay(delay, stoppingToken);
-
             foreach (var scraper in scrapers)
             {
+                if (stoppingToken.IsCancellationRequested) return;
+                if (!IsDue(scraper.SourceName)) continue;
+
                 try
                 {
                     await RunWithRetryAsync(scraper, stoppingToken);
@@ -66,11 +67,26 @@ public sealed class ScraperWorker(
                         $"{scraper.SourceName}:crash",
                         $"❌ [{scraper.SourceName}] crashed: {ex.GetType().Name}: {ex.Message[..Math.Min(200, ex.Message.Length)]}\n{DateTime.UtcNow:u}");
                 }
+                finally
+                {
+                    _lastRun[scraper.SourceName] = DateTime.UtcNow;
+                }
 
                 if (!stoppingToken.IsCancellationRequested)
                     await Task.Delay(TimeSpan.FromSeconds(Random.Shared.Next(3, 9)), stoppingToken);
             }
+
+            var delay = TimeSpan.FromSeconds(Random.Shared.Next(minDelay, maxDelay + 1));
+            await Task.Delay(delay, stoppingToken);
         }
+    }
+
+    private bool IsDue(string sourceName)
+    {
+        var seconds = config.GetValue<int>($"Scraper:SourceIntervalSeconds:{sourceName}", 0);
+        if (seconds == 0) return true;
+        if (!_lastRun.TryGetValue(sourceName, out var last)) return true;
+        return DateTime.UtcNow - last >= TimeSpan.FromSeconds(seconds);
     }
 
     private async Task RunWithRetryAsync(IPropertyScraper scraper, CancellationToken ct)

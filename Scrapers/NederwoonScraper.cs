@@ -12,7 +12,7 @@ public sealed class NederwoonScraper : IPropertyScraper
         "amsterdam", "rotterdam", "utrecht", "haarlem", "leiden",
         "delft", "breda", "tilburg", "nijmegen", "arnhem",
         "maastricht", "zwolle", "almere", "eindhoven", "groningen",
-        "dordrecht", "alkmaar", "amersfoort",
+        "dordrecht", "alkmaar", "amersfoort", "deventer",
     ];
 
     private const string BaseUrl = "https://www.nederwoon.nl/huurwoningen/";

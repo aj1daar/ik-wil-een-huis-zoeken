@@ -12,7 +12,7 @@ public sealed class HuurwoningenScraper : IPropertyScraper
         "amsterdam", "rotterdam", "utrecht", "eindhoven", "groningen",
         "tilburg", "almere", "breda", "nijmegen", "haarlem",
         "arnhem", "leiden", "maastricht", "delft", "dordrecht",
-        "zwolle", "amersfoort", "alkmaar",
+        "zwolle", "amersfoort", "alkmaar", "deventer",
     ];
 
     private const string BaseUrl = "https://www.huurwoningen.nl/in/";

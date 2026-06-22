@@ -24,6 +24,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.MaxBudget).HasColumnName("max_budget").HasColumnType("numeric(10,2)");
             e.Property(x => x.IsActive).HasColumnName("is_active");
             e.Property(x => x.IsPaused).HasColumnName("is_paused");
+            e.Property(x => x.PropertyTypeFilter).HasColumnName("property_type_filter").HasConversion<string>();
             e.Property(x => x.OnboardingState).HasColumnName("onboarding_state").HasConversion<string>();
             e.Property(x => x.CreatedAt).HasColumnName("created_at");
             e.HasIndex(x => x.TelegramChatId).IsUnique();

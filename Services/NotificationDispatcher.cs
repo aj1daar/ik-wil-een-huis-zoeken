@@ -1,5 +1,6 @@
 using IWEHZ.Domain.Models;
 using IWEHZ.Infrastructure.Markdown;
+using static IWEHZ.Domain.Models.PropertyTypeFilter;
 using IWEHZ.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Telegram.Bot;
@@ -54,6 +55,8 @@ public sealed class NotificationDispatcher(
                 if (alreadyNotified.Any(n => n.UserId == user.Id && n.ListingId == listing.Id))
                     return false;
                 if (recentFingerprints.Contains(listing.ContentFingerprint))
+                    return false;
+                if (user.PropertyTypeFilter != Any && DetectPropertyType(listing) != user.PropertyTypeFilter)
                     return false;
                 if (user.MinBudget.HasValue && listing.Price < user.MinBudget.Value)
                     return false;
@@ -166,6 +169,18 @@ public sealed class NotificationDispatcher(
                 logger.LogWarning(ex, "Failed to send notification to user {UserId} after {Max} attempts", userId, maxAttempts);
             }
         }
+    }
+
+    private static PropertyTypeFilter DetectPropertyType(RentalListing listing)
+    {
+        var t = listing.Title.ToLowerInvariant();
+        if (t.Contains("kamer") || t.Contains(" room") || listing.Source == "kamernet")
+            return Room;
+        if (t.Contains("huis") || t.Contains("house") || t.Contains("villa") || t.Contains("woonhuis"))
+            return House;
+        if (t.Contains("appartement") || t.Contains("apartment") || t.Contains("studio") || t.Contains("flat"))
+            return Apartment;
+        return Any;
     }
 
     private static string FormatSingle(RentalListing listing) =>

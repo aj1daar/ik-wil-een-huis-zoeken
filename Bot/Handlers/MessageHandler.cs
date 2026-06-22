@@ -283,7 +283,8 @@ public sealed class MessageHandler(
         var keyboard = new ReplyKeyboardMarkup(
         [
             [new KeyboardButton("Update budget"), new KeyboardButton("Update min budget")],
-            [new KeyboardButton("Update cities"), new KeyboardButton("Cancel")],
+            [new KeyboardButton("Update cities"), new KeyboardButton("Update property type")],
+            [new KeyboardButton("Cancel")],
         ])
         { ResizeKeyboard = true, OneTimeKeyboard = true };
 
@@ -329,6 +330,27 @@ public sealed class MessageHandler(
                 parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
                 replyMarkup: keyboard,
                 cancellationToken: ct);
+        }
+        else if (text.Equals("Update property type", StringComparison.OrdinalIgnoreCase))
+        {
+            stateCache.Clear(chatId);
+            var keyboard = new InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton.WithCallbackData("🏠 Any", "proptype:Any"),
+                    InlineKeyboardButton.WithCallbackData("🏢 Apartment", "proptype:Apartment"),
+                ],
+                [
+                    InlineKeyboardButton.WithCallbackData("🏡 House", "proptype:House"),
+                    InlineKeyboardButton.WithCallbackData("🛏 Room", "proptype:Room"),
+                ],
+            ]);
+            await bot.SendMessage(chatId,
+                "Select the *property type* you want to be notified about:",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                replyMarkup: new ReplyKeyboardRemove(),
+                cancellationToken: ct);
+            await bot.SendMessage(chatId, "👇", replyMarkup: keyboard, cancellationToken: ct);
         }
         else if (text.Equals("Update cities", StringComparison.OrdinalIgnoreCase))
         {
@@ -442,6 +464,7 @@ public sealed class MessageHandler(
             : "no limit";
 
         var pauseState = user.IsPaused ? "⏸ Paused" : "▶️ Active";
+        var propType = user.PropertyTypeFilter.ToString();
         var toggleButton = new InlineKeyboardMarkup(
             InlineKeyboardButton.WithCallbackData(
                 user.IsPaused ? "▶️ Resume notifications" : "⏸ Pause notifications",
@@ -451,6 +474,7 @@ public sealed class MessageHandler(
             $"📊 *Your status*\n\n" +
             $"🔔 *Notifications:* {MarkdownHelper.EscapeV2(pauseState)}\n" +
             $"💶 *Budget:* {MarkdownHelper.EscapeV2(minBudget)} – {MarkdownHelper.EscapeV2(budget)}\n" +
+            $"🏠 *Property type:* {MarkdownHelper.EscapeV2(propType)}\n" +
             $"📍 *Cities:* {MarkdownHelper.EscapeV2(cityList)}\n\n" +
             $"Use /settings to update your preferences\\.",
             parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,

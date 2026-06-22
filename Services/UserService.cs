@@ -79,6 +79,15 @@ public sealed class UserService(IDbContextFactory<AppDbContext> dbFactory)
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task SetPropertyTypeFilterAsync(long chatId, IWEHZ.Domain.Models.PropertyTypeFilter filter, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var user = await db.Users.FirstOrDefaultAsync(u => u.TelegramChatId == chatId, ct);
+        if (user is null) return;
+        user.PropertyTypeFilter = filter;
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task SetPausedAsync(long chatId, bool paused, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);

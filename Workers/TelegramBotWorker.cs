@@ -1,4 +1,5 @@
 using IWEHZ.Bot.Handlers;
+using IWEHZ.Domain.Models;
 using IWEHZ.Services;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
@@ -83,7 +84,22 @@ public sealed class TelegramBotWorker(
                 break;
 
             default:
-                logger.LogWarning("Unknown callback query data: {Data}", data);
+                if (data.StartsWith("proptype:"))
+                {
+                    var typeName = data["proptype:".Length..];
+                    if (Enum.TryParse<PropertyTypeFilter>(typeName, out var filter))
+                    {
+                        await userService.SetPropertyTypeFilterAsync(chatId, filter, ct);
+                        await client.SendMessage(chatId,
+                            $"✅ Property type set to *{typeName}*\\.",
+                            parseMode: ParseMode.MarkdownV2,
+                            cancellationToken: ct);
+                    }
+                }
+                else
+                {
+                    logger.LogWarning("Unknown callback query data: {Data}", data);
+                }
                 break;
         }
     }

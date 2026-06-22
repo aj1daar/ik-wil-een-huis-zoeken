@@ -30,6 +30,8 @@ public sealed class NotificationDispatcher(
             .Select(n => new { n.UserId, n.ListingId })
             .ToListAsync(ct);
 
+        var minPrice = listings.Min(l => l.Price);
+
         var users = await db.Users
             .AsNoTracking()
             .Include(u => u.UserCities)
@@ -38,7 +40,7 @@ public sealed class NotificationDispatcher(
                 u.IsActive &&
                 !u.IsPaused &&
                 u.OnboardingState == OnboardingState.Completed &&
-                (u.MaxBudget == null || u.MaxBudget >= listings.Min(l => l.Price)))
+                (u.MaxBudget == null || u.MaxBudget >= minPrice))
             .ToListAsync(ct);
 
         var cutoff = DateTime.UtcNow.AddHours(-48);

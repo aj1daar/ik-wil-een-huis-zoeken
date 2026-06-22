@@ -40,11 +40,20 @@ public sealed class NotificationDispatcher(
                 (u.MaxBudget == null || u.MaxBudget >= listings.Min(l => l.Price)))
             .ToListAsync(ct);
 
+        var cutoff = DateTime.UtcNow.AddHours(-48);
+
         foreach (var user in users)
         {
+            var recentFingerprints = await db.NotificationLogs
+                .Where(n => n.UserId == user.Id && n.SentAt > cutoff)
+                .Join(db.RentalListings, n => n.ListingId, l => l.Id, (n, l) => l.ContentFingerprint)
+                .ToHashSetAsync(ct);
+
             var matched = listings.Where(listing =>
             {
                 if (alreadyNotified.Any(n => n.UserId == user.Id && n.ListingId == listing.Id))
+                    return false;
+                if (recentFingerprints.Contains(listing.ContentFingerprint))
                     return false;
                 if (user.MinBudget.HasValue && listing.Price < user.MinBudget.Value)
                     return false;

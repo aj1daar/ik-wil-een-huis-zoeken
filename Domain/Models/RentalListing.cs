@@ -9,6 +9,7 @@ public class RentalListing
     public string City { get; set; } = string.Empty;
     public decimal Price { get; set; }
     public decimal? PreviousPrice { get; set; }
+    public string ContentFingerprint { get; set; } = string.Empty;
     public string SourceUrl { get; set; } = string.Empty;
     public DateTime ScrapedAt { get; set; } = DateTime.UtcNow;
     public ICollection<NotificationLog> NotificationLogs { get; set; } = [];

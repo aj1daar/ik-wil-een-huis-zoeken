@@ -1,4 +1,6 @@
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using IWEHZ.Domain.Models;
 using IWEHZ.Infrastructure.Persistence;
 using IWEHZ.Scrapers;
@@ -79,6 +81,16 @@ public sealed class ScraperWorker(
             var delay = TimeSpan.FromSeconds(Random.Shared.Next(minDelay, maxDelay + 1));
             await Task.Delay(delay, stoppingToken);
         }
+    }
+
+    private static string ComputeFingerprint(string city, decimal price, string title)
+    {
+        var streetPart = title.Split(',')[0].Trim().ToLowerInvariant();
+        if (streetPart.Length > 40) streetPart = streetPart[..40];
+        var priceBucket = (int)(price / 50) * 50;
+        var input = $"{city.ToLowerInvariant()}|{priceBucket}|{streetPart}";
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(input));
+        return Convert.ToHexString(hash)[..16];
     }
 
     private bool IsDue(string sourceName)
@@ -164,6 +176,7 @@ public sealed class ScraperWorker(
                 Title = scraped.Title,
                 City = scraped.City,
                 Price = scraped.Price,
+                ContentFingerprint = ComputeFingerprint(scraped.City, scraped.Price, scraped.Title),
                 SourceUrl = scraped.SourceUrl,
                 ScrapedAt = DateTime.UtcNow,
             };

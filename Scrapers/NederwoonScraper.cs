@@ -1,39 +1,39 @@
 using System.Net;
 using AngleSharp;
 using AngleSharp.Html.Dom;
+using IWEHZ.Domain.Models;
 using IWEHZ.Infrastructure.Http;
+using IWEHZ.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace IWEHZ.Scrapers;
 
 public sealed class NederwoonScraper : IPropertyScraper
 {
-    private static readonly string[] CitySlugs =
-    [
-        "amsterdam", "rotterdam", "utrecht", "haarlem", "leiden",
-        "delft", "breda", "tilburg", "nijmegen", "arnhem",
-        "maastricht", "zwolle", "almere", "eindhoven", "groningen",
-        "dordrecht", "alkmaar", "amersfoort", "deventer",
-    ];
-
     private const string BaseUrl = "https://www.nederwoon.nl/huurwoningen/";
     private readonly string? _proxyUrl;
+    private readonly IDbContextFactory<AppDbContext> _dbFactory;
     private readonly ILogger<NederwoonScraper> _logger;
 
     public string SourceName => "nederwoon";
 
-    public NederwoonScraper(Microsoft.Extensions.Configuration.IConfiguration config, ILogger<NederwoonScraper> logger)
+    public NederwoonScraper(Microsoft.Extensions.Configuration.IConfiguration config, IDbContextFactory<AppDbContext> dbFactory, ILogger<NederwoonScraper> logger)
     {
         var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
         _proxyUrl = sourceOverride is not null ? sourceOverride : config["Scraper:ProxyUrl"];
+        _dbFactory = dbFactory;
         _logger = logger;
     }
 
     public async Task<IReadOnlyList<ScrapedListing>> ScrapeAsync(CancellationToken ct)
     {
+        var citySlugs = await GetActiveCitySlugsAsync(ct);
+        if (citySlugs.Count == 0) return [];
+
         var listings = new List<ScrapedListing>();
         var seen = new HashSet<string>();
 
-        foreach (var citySlug in CitySlugs)
+        foreach (var citySlug in citySlugs)
         {
             if (ct.IsCancellationRequested) break;
 
@@ -59,6 +59,17 @@ public sealed class NederwoonScraper : IPropertyScraper
         }
 
         return listings;
+    }
+
+    private async Task<List<string>> GetActiveCitySlugsAsync(CancellationToken ct)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+        var names = await db.UserCities
+            .Where(uc => uc.User.IsActive && uc.User.OnboardingState == OnboardingState.Completed)
+            .Select(uc => uc.City.NameNl)
+            .Distinct()
+            .ToListAsync(ct);
+        return names.Select(n => n.ToLowerInvariant().Replace(' ', '-')).ToList();
     }
 
     private async Task<List<ScrapedListing>> ScrapeCityAsync(string citySlug, CancellationToken ct)

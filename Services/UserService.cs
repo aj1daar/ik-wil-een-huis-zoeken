@@ -10,7 +10,6 @@ public sealed class UserService(IDbContextFactory<AppDbContext> dbFactory)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
         return await db.Users
-            .AsNoTracking()
             .Include(u => u.UserCities)
             .ThenInclude(uc => uc.City)
             .FirstOrDefaultAsync(u => u.TelegramChatId == chatId, ct);
@@ -40,32 +39,34 @@ public sealed class UserService(IDbContextFactory<AppDbContext> dbFactory)
     public async Task SetMinBudgetAsync(long chatId, decimal? minBudget, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var user = await db.Users.FirstOrDefaultAsync(u => u.TelegramChatId == chatId, ct);
-        if (user is null) return;
-        user.MinBudget = minBudget;
-        await db.SaveChangesAsync(ct);
+        await db.Users
+            .Where(u => u.TelegramChatId == chatId)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.MinBudget, minBudget), ct);
     }
 
     public async Task SetBudgetAsync(long chatId, decimal budget, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var user = await db.Users.FirstOrDefaultAsync(u => u.TelegramChatId == chatId, ct);
-        if (user is null) return;
-        user.MaxBudget = budget;
-        await db.SaveChangesAsync(ct);
+        await db.Users
+            .Where(u => u.TelegramChatId == chatId)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.MaxBudget, budget), ct);
     }
 
     public async Task SetCitiesAsync(long chatId, IEnumerable<int> cityIds, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var user = await db.Users
-            .Include(u => u.UserCities)
-            .FirstOrDefaultAsync(u => u.TelegramChatId == chatId, ct);
-        if (user is null) return;
 
-        user.UserCities.Clear();
+        var userId = await db.Users
+            .Where(u => u.TelegramChatId == chatId)
+            .Select(u => u.Id)
+            .FirstOrDefaultAsync(ct);
+
+        if (userId == 0) return;
+
+        await db.UserCities.Where(uc => uc.UserId == userId).ExecuteDeleteAsync(ct);
+
         foreach (var id in cityIds)
-            user.UserCities.Add(new UserCity { UserId = user.Id, CityId = id });
+            db.UserCities.Add(new UserCity { UserId = userId, CityId = id });
 
         await db.SaveChangesAsync(ct);
     }
@@ -73,37 +74,34 @@ public sealed class UserService(IDbContextFactory<AppDbContext> dbFactory)
     public async Task CompleteOnboardingAsync(long chatId, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var user = await db.Users.FirstOrDefaultAsync(u => u.TelegramChatId == chatId, ct);
-        if (user is null) return;
-        user.OnboardingState = OnboardingState.Completed;
-        await db.SaveChangesAsync(ct);
+        await db.Users
+            .Where(u => u.TelegramChatId == chatId)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.OnboardingState, OnboardingState.Completed), ct);
     }
 
-    public async Task SetPropertyTypeFilterAsync(long chatId, IWEHZ.Domain.Models.PropertyTypeFilter filter, CancellationToken ct = default)
+    public async Task SetPropertyTypeFilterAsync(long chatId, PropertyTypeFilter filter, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var user = await db.Users.FirstOrDefaultAsync(u => u.TelegramChatId == chatId, ct);
-        if (user is null) return;
-        user.PropertyTypeFilter = filter;
-        await db.SaveChangesAsync(ct);
+        await db.Users
+            .Where(u => u.TelegramChatId == chatId)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.PropertyTypeFilter, filter), ct);
     }
 
     public async Task SetPausedAsync(long chatId, bool paused, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var user = await db.Users.FirstOrDefaultAsync(u => u.TelegramChatId == chatId, ct);
-        if (user is null) return;
-        user.IsPaused = paused;
-        await db.SaveChangesAsync(ct);
+        await db.Users
+            .Where(u => u.TelegramChatId == chatId)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.IsPaused, paused), ct);
     }
 
     public async Task ActivateAsync(long chatId, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);
-        var user = await db.Users.FirstOrDefaultAsync(u => u.TelegramChatId == chatId, ct);
-        if (user is null) return;
-        user.IsActive = true;
-        user.OnboardingState = OnboardingState.AwaitingBudget;
-        await db.SaveChangesAsync(ct);
+        await db.Users
+            .Where(u => u.TelegramChatId == chatId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(u => u.IsActive, true)
+                .SetProperty(u => u.OnboardingState, OnboardingState.AwaitingBudget), ct);
     }
 }

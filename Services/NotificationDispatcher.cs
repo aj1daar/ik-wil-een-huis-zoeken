@@ -113,18 +113,7 @@ public sealed class NotificationDispatcher(
                     $"🔗 [View listing]({MarkdownHelper.EscapeV2(listing.SourceUrl)})\n" +
                     $"_Source: {MarkdownHelper.EscapeV2(listing.Source)}_";
 
-                try
-                {
-                    await bot.SendMessage(
-                        chatId: user.TelegramChatId,
-                        text: msg,
-                        parseMode: ParseMode.MarkdownV2,
-                        cancellationToken: ct);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Failed to send price drop to user {UserId}", user.Id);
-                }
+                await SendWithRetryAsync(user.TelegramChatId, user.Id, msg, ct);
             }
         }
     }
@@ -135,17 +124,38 @@ public sealed class NotificationDispatcher(
             ? FormatSingle(listings[0])
             : FormatBatch(listings);
 
-        try
+        await SendWithRetryAsync(user.TelegramChatId, user.Id, message, ct);
+    }
+
+    private async Task SendWithRetryAsync(long chatId, int userId, string message, CancellationToken ct)
+    {
+        const int maxAttempts = 3;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            await bot.SendMessage(
-                chatId: user.TelegramChatId,
-                text: message,
-                parseMode: ParseMode.MarkdownV2,
-                cancellationToken: ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to send notification to user {UserId}", user.Id);
+            try
+            {
+                await bot.SendMessage(
+                    chatId: chatId,
+                    text: message,
+                    parseMode: ParseMode.MarkdownV2,
+                    cancellationToken: ct);
+                return;
+            }
+            catch (Telegram.Bot.Exceptions.ApiRequestException ex) when (ex.ErrorCode == 429 && attempt < maxAttempts)
+            {
+                var retryAfter = ex.Parameters?.RetryAfter ?? attempt * 5;
+                logger.LogWarning("Telegram rate limit for user {UserId}, retrying in {Delay}s", userId, retryAfter);
+                await Task.Delay(TimeSpan.FromSeconds(retryAfter), ct);
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                logger.LogWarning(ex, "Send attempt {Attempt} failed for user {UserId}, retrying", attempt, userId);
+                await Task.Delay(TimeSpan.FromSeconds(attempt * 2), ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to send notification to user {UserId} after {Max} attempts", userId, maxAttempts);
+            }
         }
     }
 

@@ -78,6 +78,12 @@ public sealed class MessageHandler(
             return;
         }
 
+        if (text == "/status")
+        {
+            await HandleStatusAsync(bot, chatId, ct);
+            return;
+        }
+
         switch (step)
         {
             case ConversationStep.AwaitingBudget:
@@ -298,6 +304,38 @@ public sealed class MessageHandler(
                 replyMarkup: new ReplyKeyboardRemove(),
                 cancellationToken: ct);
         }
+    }
+
+    private async Task HandleStatusAsync(ITelegramBotClient bot, long chatId, CancellationToken ct)
+    {
+        var user = await userService.GetByChatIdAsync(chatId, ct);
+        if (user is null) return;
+
+        if (user.OnboardingState != OnboardingState.Completed)
+        {
+            await bot.SendMessage(chatId,
+                "⚠️ You haven't completed setup yet\\. Send /start to begin\\.",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                cancellationToken: ct);
+            return;
+        }
+
+        var cities = user.UserCities?.Select(uc => uc.City.NameNl).ToList() ?? [];
+        var cityList = cities.Count > 0
+            ? string.Join(", ", cities)
+            : "none";
+
+        var budget = user.MaxBudget.HasValue
+            ? $"€{user.MaxBudget.Value:N0}/month"
+            : "no limit";
+
+        await bot.SendMessage(chatId,
+            $"📊 *Your status*\n\n" +
+            $"💶 *Budget:* {MarkdownHelper.EscapeV2(budget)}\n" +
+            $"📍 *Cities:* {MarkdownHelper.EscapeV2(cityList)}\n\n" +
+            $"Use /settings to update your preferences\\.",
+            parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+            cancellationToken: ct);
     }
 
     private async Task HandleMyCitiesAsync(ITelegramBotClient bot, DomainUser user, long chatId, CancellationToken ct)

@@ -132,6 +132,8 @@ public sealed class ScraperWorker(
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
 
+        var newEntities = new List<RentalListing>();
+
         foreach (var scraped in listings)
         {
             var exists = await db.RentalListings
@@ -153,8 +155,10 @@ public sealed class ScraperWorker(
 
             db.RentalListings.Add(entity);
             await db.SaveChangesAsync(ct);
-
-            await dispatcher.DispatchAsync(entity, ct);
+            newEntities.Add(entity);
         }
+
+        if (newEntities.Count > 0)
+            await dispatcher.DispatchBatchAsync(newEntities, ct);
     }
 }

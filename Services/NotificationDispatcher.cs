@@ -12,59 +12,71 @@ public sealed class NotificationDispatcher(
     ITelegramBotClient bot,
     ILogger<NotificationDispatcher> logger)
 {
-    public async Task DispatchAsync(RentalListing listing, CancellationToken ct)
+    public async Task DispatchAsync(RentalListing listing, CancellationToken ct) =>
+        await DispatchBatchAsync([listing], ct);
+
+    public async Task DispatchBatchAsync(IReadOnlyList<RentalListing> listings, CancellationToken ct)
     {
+        if (listings.Count == 0) return;
+
         await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+        var listingIds = listings.Select(l => l.Id).ToHashSet();
 
         var alreadyNotified = await db.NotificationLogs
             .AsNoTracking()
-            .Where(n => n.ListingId == listing.Id)
-            .Select(n => n.UserId)
-            .ToHashSetAsync(ct);
+            .Where(n => listingIds.Contains(n.ListingId))
+            .Select(n => new { n.UserId, n.ListingId })
+            .ToListAsync(ct);
 
-        var matchedUsers = await db.Users
+        var users = await db.Users
             .AsNoTracking()
             .Include(u => u.UserCities)
             .ThenInclude(uc => uc.City)
             .Where(u =>
                 u.IsActive &&
                 u.OnboardingState == OnboardingState.Completed &&
-                !alreadyNotified.Contains(u.Id) &&
-                (u.MaxBudget == null || listing.Price <= u.MaxBudget))
+                (u.MaxBudget == null || u.MaxBudget >= listings.Min(l => l.Price)))
             .ToListAsync(ct);
 
-        var listingCityNorm = listing.City.Trim().ToLowerInvariant();
-
-        foreach (var user in matchedUsers)
+        foreach (var user in users)
         {
-            var cityMatch = user.UserCities.Any(uc =>
-                uc.City.NameNl.ToLowerInvariant() == listingCityNorm ||
-                uc.City.NameEn.ToLowerInvariant() == listingCityNorm);
-
-            if (!cityMatch) continue;
-
-            await SendAlertAsync(user, listing, ct);
-
-            db.NotificationLogs.Add(new NotificationLog
+            var matched = listings.Where(listing =>
             {
-                UserId = user.Id,
-                ListingId = listing.Id,
-                SentAt = DateTime.UtcNow,
-            });
+                if (alreadyNotified.Any(n => n.UserId == user.Id && n.ListingId == listing.Id))
+                    return false;
+                if (user.MaxBudget.HasValue && listing.Price > user.MaxBudget.Value)
+                    return false;
+
+                var cityNorm = listing.City.Trim().ToLowerInvariant();
+                return user.UserCities.Any(uc =>
+                    uc.City.NameNl.ToLowerInvariant() == cityNorm ||
+                    uc.City.NameEn.ToLowerInvariant() == cityNorm);
+            }).ToList();
+
+            if (matched.Count == 0) continue;
+
+            await SendAlertAsync(user, matched, ct);
+
+            foreach (var listing in matched)
+            {
+                db.NotificationLogs.Add(new NotificationLog
+                {
+                    UserId = user.Id,
+                    ListingId = listing.Id,
+                    SentAt = DateTime.UtcNow,
+                });
+            }
         }
 
         await db.SaveChangesAsync(ct);
     }
 
-    private async Task SendAlertAsync(User user, RentalListing listing, CancellationToken ct)
+    private async Task SendAlertAsync(User user, List<RentalListing> listings, CancellationToken ct)
     {
-        var message =
-            $"🏠 *New rental listing*\n\n" +
-            $"*{MarkdownHelper.EscapeV2(listing.Title)}*\n" +
-            $"📍 {MarkdownHelper.EscapeV2(listing.City)}\n" +
-            $"💶 €{listing.Price:N0} / month\n" +
-            $"🔗 [View listing]({MarkdownHelper.EscapeV2(listing.SourceUrl)})\n" +
-            $"_Source: {MarkdownHelper.EscapeV2(listing.Source)}_";
+        var message = listings.Count == 1
+            ? FormatSingle(listings[0])
+            : FormatBatch(listings);
 
         try
         {
@@ -80,4 +92,27 @@ public sealed class NotificationDispatcher(
         }
     }
 
+    private static string FormatSingle(RentalListing listing) =>
+        $"🏠 *New listing*\n\n" +
+        $"*{MarkdownHelper.EscapeV2(listing.Title)}*\n" +
+        $"📍 {MarkdownHelper.EscapeV2(listing.City)}\n" +
+        $"💶 €{listing.Price:N0}/month\n" +
+        $"🔗 [View listing]({MarkdownHelper.EscapeV2(listing.SourceUrl)})\n" +
+        $"_Source: {MarkdownHelper.EscapeV2(listing.Source)}_";
+
+    private static string FormatBatch(List<RentalListing> listings)
+    {
+        var lines = new System.Text.StringBuilder();
+        lines.AppendLine($"🏠 *{listings.Count} new listings found\\!*\n");
+
+        foreach (var l in listings)
+        {
+            lines.AppendLine(
+                $"• [{MarkdownHelper.EscapeV2(l.Title)}]({MarkdownHelper.EscapeV2(l.SourceUrl)}) — " +
+                $"📍 {MarkdownHelper.EscapeV2(l.City)} — " +
+                $"💶 €{l.Price:N0}");
+        }
+
+        return lines.ToString().TrimEnd();
+    }
 }

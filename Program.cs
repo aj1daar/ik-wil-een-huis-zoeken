@@ -39,6 +39,7 @@ builder.Services.AddSingleton<MessageHandler>();
 
 builder.Services.AddHostedService<ScraperWorker>();
 builder.Services.AddHostedService<TelegramBotWorker>();
+builder.Services.AddHostedService<CleanupWorker>();
 
 var app = builder.Build();
 

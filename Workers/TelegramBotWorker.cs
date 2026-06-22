@@ -1,6 +1,4 @@
 using IWEHZ.Bot.Handlers;
-using IWEHZ.Domain.Models;
-using IWEHZ.Services;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
@@ -12,7 +10,6 @@ namespace IWEHZ.Workers;
 public sealed class TelegramBotWorker(
     ITelegramBotClient bot,
     MessageHandler messageHandler,
-    UserService userService,
     ILogger<TelegramBotWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -39,68 +36,14 @@ public sealed class TelegramBotWorker(
         try
         {
             if (update.Message is { } message)
-            {
                 await messageHandler.HandleAsync(client, message, ct);
-            }
             else if (update.CallbackQuery is { } query)
-            {
-                await HandleCallbackQueryAsync(client, query, ct);
-            }
+                await messageHandler.HandleCallbackAsync(client, query, ct);
         }
         catch (Exception ex)
         {
             var chatId = update.Message?.Chat.Id ?? update.CallbackQuery?.Message?.Chat.Id;
             logger.LogError(ex, "Unhandled error processing update from {ChatId}", chatId);
-        }
-    }
-
-    private async Task HandleCallbackQueryAsync(ITelegramBotClient client, CallbackQuery query, CancellationToken ct)
-    {
-        var chatId = query.Message!.Chat.Id;
-        var data = query.Data ?? string.Empty;
-
-        await client.AnswerCallbackQuery(query.Id, cancellationToken: ct);
-
-        switch (data)
-        {
-            case "pause":
-                await userService.SetPausedAsync(chatId, true, ct);
-                await client.EditMessageReplyMarkup(
-                    chatId, query.Message.MessageId,
-                    new Telegram.Bot.Types.ReplyMarkups.InlineKeyboardMarkup(
-                        Telegram.Bot.Types.ReplyMarkups.InlineKeyboardButton.WithCallbackData("▶️ Resume notifications", "resume")),
-                    cancellationToken: ct);
-                await client.SendMessage(chatId, "⏸ Notifications paused\\.", parseMode: ParseMode.MarkdownV2, cancellationToken: ct);
-                break;
-
-            case "resume":
-                await userService.SetPausedAsync(chatId, false, ct);
-                await client.EditMessageReplyMarkup(
-                    chatId, query.Message.MessageId,
-                    new Telegram.Bot.Types.ReplyMarkups.InlineKeyboardMarkup(
-                        Telegram.Bot.Types.ReplyMarkups.InlineKeyboardButton.WithCallbackData("⏸ Pause notifications", "pause")),
-                    cancellationToken: ct);
-                await client.SendMessage(chatId, "▶️ Notifications resumed\\.", parseMode: ParseMode.MarkdownV2, cancellationToken: ct);
-                break;
-
-            default:
-                if (data.StartsWith("proptype:"))
-                {
-                    var typeName = data["proptype:".Length..];
-                    if (Enum.TryParse<PropertyTypeFilter>(typeName, out var filter))
-                    {
-                        await userService.SetPropertyTypeFilterAsync(chatId, filter, ct);
-                        await client.SendMessage(chatId,
-                            $"✅ Property type set to *{typeName}*\\.",
-                            parseMode: ParseMode.MarkdownV2,
-                            cancellationToken: ct);
-                    }
-                }
-                else
-                {
-                    logger.LogWarning("Unknown callback query data: {Data}", data);
-                }
-                break;
         }
     }
 

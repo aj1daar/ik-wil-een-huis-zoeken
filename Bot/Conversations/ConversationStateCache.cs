@@ -5,7 +5,9 @@ namespace IWEHZ.Bot.Conversations;
 public enum ConversationStep
 {
     None,
+    AwaitingMinBudget,
     AwaitingBudget,
+    AwaitingPropertyType,
     AwaitingCities,
     AwaitingSettingsChoice,
     AwaitingNewBudget,

@@ -25,7 +25,6 @@ builder.Services.AddSingleton<ITelegramBotClient>(_ => new TelegramBotClient(bot
 
 builder.Services.AddSingleton<ConversationStateCache>();
 builder.Services.AddSingleton<IPropertyScraper, ParariusScraper>();
-builder.Services.AddSingleton<IPropertyScraper, HuurwoningenScraper>();
 builder.Services.AddSingleton<IPropertyScraper, KamernetScraper>();
 builder.Services.AddSingleton<IPropertyScraper, DirectWonenScraper>();
 builder.Services.AddSingleton<IPropertyScraper, NederwoonScraper>();

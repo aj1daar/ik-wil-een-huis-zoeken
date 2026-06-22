@@ -14,7 +14,8 @@ public sealed class KamernetScraper : IPropertyScraper
 
     public KamernetScraper(Microsoft.Extensions.Configuration.IConfiguration config, ILogger<KamernetScraper> logger)
     {
-        _proxyUrl = config["Scraper:ProxyUrl"];
+        var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
+        _proxyUrl = sourceOverride is not null ? sourceOverride : config["Scraper:ProxyUrl"];
         _logger = logger;
     }
 

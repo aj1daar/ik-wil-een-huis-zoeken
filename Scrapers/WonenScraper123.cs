@@ -23,7 +23,8 @@ public sealed class WonenScraper123 : IPropertyScraper
 
     public WonenScraper123(Microsoft.Extensions.Configuration.IConfiguration config, ILogger<WonenScraper123> logger)
     {
-        _proxyUrl = config["Scraper:ProxyUrl"];
+        var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
+        _proxyUrl = sourceOverride is not null ? sourceOverride : config["Scraper:ProxyUrl"];
         _logger = logger;
     }
 

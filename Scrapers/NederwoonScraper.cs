@@ -23,7 +23,8 @@ public sealed class NederwoonScraper : IPropertyScraper
 
     public NederwoonScraper(Microsoft.Extensions.Configuration.IConfiguration config, ILogger<NederwoonScraper> logger)
     {
-        _proxyUrl = config["Scraper:ProxyUrl"];
+        var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
+        _proxyUrl = sourceOverride is not null ? sourceOverride : config["Scraper:ProxyUrl"];
         _logger = logger;
     }
 

@@ -121,6 +121,12 @@ public sealed class ScraperWorker(
                     scraper.SourceName, attempt, maxAttempts, (int)ex.StatusCode.Value, attempt * 3);
                 await Task.Delay(TimeSpan.FromSeconds(attempt * 3), ct);
             }
+            catch (HttpRequestException ex) when (attempt < maxAttempts && !ex.StatusCode.HasValue)
+            {
+                logger.LogWarning("Scraper {Source} attempt {Attempt}/{Max} network error, retrying in {Delay}s",
+                    scraper.SourceName, attempt, maxAttempts, attempt * 3);
+                await Task.Delay(TimeSpan.FromSeconds(attempt * 3), ct);
+            }
         }
     }
 

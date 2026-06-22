@@ -5,6 +5,7 @@ public class User
     public int Id { get; set; }
     public long TelegramChatId { get; set; }
     public string? TelegramUsername { get; set; }
+    public decimal? MinBudget { get; set; }
     public decimal? MaxBudget { get; set; }
     public bool IsActive { get; set; } = false;
     public bool IsPaused { get; set; } = false;

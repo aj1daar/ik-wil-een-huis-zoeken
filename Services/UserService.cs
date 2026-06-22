@@ -37,6 +37,15 @@ public sealed class UserService(IDbContextFactory<AppDbContext> dbFactory)
         return user;
     }
 
+    public async Task SetMinBudgetAsync(long chatId, decimal? minBudget, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var user = await db.Users.FirstOrDefaultAsync(u => u.TelegramChatId == chatId, ct);
+        if (user is null) return;
+        user.MinBudget = minBudget;
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task SetBudgetAsync(long chatId, decimal budget, CancellationToken ct = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(ct);

@@ -20,6 +20,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Id).HasColumnName("id").UseIdentityAlwaysColumn();
             e.Property(x => x.TelegramChatId).HasColumnName("telegram_chat_id");
             e.Property(x => x.TelegramUsername).HasColumnName("telegram_username");
+            e.Property(x => x.MinBudget).HasColumnName("min_budget").HasColumnType("numeric(10,2)");
             e.Property(x => x.MaxBudget).HasColumnName("max_budget").HasColumnType("numeric(10,2)");
             e.Property(x => x.IsActive).HasColumnName("is_active");
             e.Property(x => x.IsPaused).HasColumnName("is_paused");

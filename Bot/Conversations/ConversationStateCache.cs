@@ -10,6 +10,7 @@ public enum ConversationStep
     AwaitingSettingsChoice,
     AwaitingNewBudget,
     AwaitingNewCities,
+    AwaitingNewMinBudget,
 }
 
 public sealed class ConversationStateCache

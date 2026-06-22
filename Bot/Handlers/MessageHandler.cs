@@ -109,6 +109,10 @@ public sealed class MessageHandler(
                 await HandleBudgetInputAsync(bot, chatId, text, step, ct);
                 break;
 
+            case ConversationStep.AwaitingNewMinBudget:
+                await HandleMinBudgetInputAsync(bot, chatId, text, ct);
+                break;
+
             case ConversationStep.AwaitingCities:
             case ConversationStep.AwaitingNewCities:
                 await HandleCitiesInputAsync(bot, chatId, text, step, ct);
@@ -269,8 +273,8 @@ public sealed class MessageHandler(
 
         var keyboard = new ReplyKeyboardMarkup(
         [
-            [new KeyboardButton("Update budget"), new KeyboardButton("Update cities")],
-            [new KeyboardButton("Cancel")],
+            [new KeyboardButton("Update budget"), new KeyboardButton("Update min budget")],
+            [new KeyboardButton("Update cities"), new KeyboardButton("Cancel")],
         ])
         { ResizeKeyboard = true, OneTimeKeyboard = true };
 
@@ -300,6 +304,23 @@ public sealed class MessageHandler(
                 replyMarkup: keyboard,
                 cancellationToken: ct);
         }
+        else if (text.Equals("Update min budget", StringComparison.OrdinalIgnoreCase))
+        {
+            stateCache.Set(chatId, ConversationStep.AwaitingNewMinBudget);
+
+            var keyboard = new ReplyKeyboardMarkup(
+            [
+                [new KeyboardButton("€500"), new KeyboardButton("€700"), new KeyboardButton("€800")],
+                [new KeyboardButton("€1000"), new KeyboardButton("No minimum")],
+            ])
+            { ResizeKeyboard = true, OneTimeKeyboard = true };
+
+            await bot.SendMessage(chatId,
+                "Enter your *minimum monthly budget* \\(or 'No minimum'\\):",
+                parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                replyMarkup: keyboard,
+                cancellationToken: ct);
+        }
         else if (text.Equals("Update cities", StringComparison.OrdinalIgnoreCase))
         {
             stateCache.Set(chatId, ConversationStep.AwaitingNewCities);
@@ -322,6 +343,36 @@ public sealed class MessageHandler(
                 replyMarkup: new ReplyKeyboardRemove(),
                 cancellationToken: ct);
         }
+    }
+
+    private async Task HandleMinBudgetInputAsync(ITelegramBotClient bot, long chatId, string text, CancellationToken ct)
+    {
+        decimal? minBudget = null;
+
+        if (!text.Equals("No minimum", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!BudgetParser.TryParse(text, out var parsed))
+            {
+                await bot.SendMessage(chatId,
+                    "Please enter a valid amount or 'No minimum'\\.",
+                    parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+                    cancellationToken: ct);
+                return;
+            }
+            minBudget = parsed;
+        }
+
+        await userService.SetMinBudgetAsync(chatId, minBudget, ct);
+        stateCache.Clear(chatId);
+
+        var confirmation = minBudget.HasValue
+            ? $"✅ Minimum budget set to €{minBudget.Value:N0}/month\\."
+            : "✅ Minimum budget removed\\.";
+
+        await bot.SendMessage(chatId, confirmation,
+            parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,
+            replyMarkup: new ReplyKeyboardRemove(),
+            cancellationToken: ct);
     }
 
     private async Task HandlePauseAsync(ITelegramBotClient bot, long chatId, bool pause, CancellationToken ct)
@@ -376,6 +427,7 @@ public sealed class MessageHandler(
             ? string.Join(", ", cities)
             : "none";
 
+        var minBudget = user.MinBudget.HasValue ? $"€{user.MinBudget.Value:N0}" : "none";
         var budget = user.MaxBudget.HasValue
             ? $"€{user.MaxBudget.Value:N0}/month"
             : "no limit";
@@ -389,7 +441,7 @@ public sealed class MessageHandler(
         await bot.SendMessage(chatId,
             $"📊 *Your status*\n\n" +
             $"🔔 *Notifications:* {MarkdownHelper.EscapeV2(pauseState)}\n" +
-            $"💶 *Budget:* {MarkdownHelper.EscapeV2(budget)}\n" +
+            $"💶 *Budget:* {MarkdownHelper.EscapeV2(minBudget)} – {MarkdownHelper.EscapeV2(budget)}\n" +
             $"📍 *Cities:* {MarkdownHelper.EscapeV2(cityList)}\n\n" +
             $"Use /settings to update your preferences\\.",
             parseMode: Telegram.Bot.Types.Enums.ParseMode.MarkdownV2,

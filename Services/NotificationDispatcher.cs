@@ -46,6 +46,8 @@ public sealed class NotificationDispatcher(
             {
                 if (alreadyNotified.Any(n => n.UserId == user.Id && n.ListingId == listing.Id))
                     return false;
+                if (user.MinBudget.HasValue && listing.Price < user.MinBudget.Value)
+                    return false;
                 if (user.MaxBudget.HasValue && listing.Price > user.MaxBudget.Value)
                     return false;
 
@@ -90,6 +92,7 @@ public sealed class NotificationDispatcher(
         {
             var matched = listings.Where(listing =>
             {
+                if (user.MinBudget.HasValue && listing.Price < user.MinBudget.Value) return false;
                 if (user.MaxBudget.HasValue && listing.Price > user.MaxBudget.Value) return false;
                 var cityNorm = listing.City.Trim().ToLowerInvariant();
                 return user.UserCities.Any(uc =>

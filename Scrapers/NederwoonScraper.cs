@@ -84,19 +84,20 @@ public sealed class NederwoonScraper : IPropertyScraper
 
         var listings = new List<ScrapedListing>();
 
-        foreach (var anchor in document.QuerySelectorAll("a[href]").OfType<IHtmlAnchorElement>())
+        foreach (var card in document.QuerySelectorAll("div.location"))
         {
             try
             {
+                var anchor = card.QuerySelector("a.see-page-button[href]") as IHtmlAnchorElement;
+                if (anchor is null) continue;
+
                 var href = anchor.GetAttribute("href") ?? string.Empty;
                 if (!TryParseListingHref(href, out var externalId, out var city)) continue;
 
                 var title = anchor.TextContent.Trim();
                 if (string.IsNullOrEmpty(title)) continue;
 
-                // Price is a sibling element outside the anchor — walk up to card container
-                var container = anchor.ParentElement ?? anchor;
-                var price = ScraperHelpers.ParsePrice(container.TextContent);
+                var price = ScraperHelpers.ParsePrice(card.QuerySelector(".heading-md")?.TextContent ?? string.Empty);
                 if (price <= 0) continue;
 
                 listings.Add(new ScrapedListing(externalId, title, city, price,

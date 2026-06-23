@@ -53,7 +53,7 @@ public static class ScraperHttpClientFactory
 
         var client = new HttpClient(handler)
         {
-            Timeout = TimeSpan.FromSeconds(30),
+            Timeout = TimeSpan.FromSeconds(60),
         };
 
         var ua = UserAgents[Random.Shared.Next(UserAgents.Length)];

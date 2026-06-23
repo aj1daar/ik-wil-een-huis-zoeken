@@ -127,6 +127,12 @@ public sealed class ScraperWorker(
                     scraper.SourceName, attempt, maxAttempts, attempt * 3);
                 await Task.Delay(TimeSpan.FromSeconds(attempt * 3), ct);
             }
+            catch (TaskCanceledException) when (attempt < maxAttempts && !ct.IsCancellationRequested)
+            {
+                logger.LogWarning("Scraper {Source} attempt {Attempt}/{Max} timed out, retrying in {Delay}s",
+                    scraper.SourceName, attempt, maxAttempts, attempt * 10);
+                await Task.Delay(TimeSpan.FromSeconds(attempt * 10), ct);
+            }
         }
     }
 

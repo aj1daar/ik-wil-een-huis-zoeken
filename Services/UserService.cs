@@ -26,7 +26,7 @@ public sealed class UserService(IDbContextFactory<AppDbContext> dbFactory)
         {
             TelegramChatId = chatId,
             TelegramUsername = username,
-            IsActive = false,
+            IsActive = true,
             OnboardingState = OnboardingState.AwaitingApproval,
             CreatedAt = DateTime.UtcNow,
         };

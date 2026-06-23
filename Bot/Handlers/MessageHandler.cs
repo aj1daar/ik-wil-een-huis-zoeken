@@ -78,23 +78,6 @@ public sealed class MessageHandler(
         if (user is null)
             user = await userService.RegisterAsync(chatId, username, ct);
 
-        if (!user.IsActive)
-        {
-            if (chatId == AdminChatId)
-            {
-                await userService.ActivateAsync(chatId, ct);
-                user = await userService.GetByChatIdAsync(chatId, ct) ?? user;
-            }
-            else
-            {
-                await bot.SendMessage(chatId,
-                    "👋 Welcome\\! To use this bot, please contact @atainogoibay to request access\\.",
-                    parseMode: ParseMode.MarkdownV2,
-                    cancellationToken: ct);
-                return;
-            }
-        }
-
         var step = stateCache.Get(chatId);
 
         // Commands

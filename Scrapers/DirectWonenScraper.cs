@@ -7,7 +7,6 @@ namespace IWEHZ.Scrapers;
 public sealed class DirectWonenScraper : IPropertyScraper
 {
     private const string BaseUrl = "https://directwonen.nl/huurwoningen-huren/nederland";
-    private const string Domain = "https://directwonen.nl";
     private readonly string? _proxyUrl;
     private readonly ILogger<DirectWonenScraper> _logger;
 
@@ -32,26 +31,29 @@ public sealed class DirectWonenScraper : IPropertyScraper
 
         var listings = new List<ScrapedListing>();
 
-        foreach (var anchor in document.QuerySelectorAll("a[href]").OfType<IHtmlAnchorElement>())
+        foreach (var tile in document.QuerySelectorAll("div.tile"))
         {
             try
             {
-                var rawHref = anchor.GetAttribute("href") ?? string.Empty;
-                var path = ToPath(rawHref);
-                if (!TryParseListingPath(path, out var externalId)) continue;
+                var anchor = tile.QuerySelector("a.inner-content[href]") as IHtmlAnchorElement;
+                if (anchor is null) continue;
 
-                var price = ScraperHelpers.ParsePrice(anchor.TextContent);
+                var rawHref = anchor.GetAttribute("href") ?? string.Empty;
+                if (!TryParseCard(rawHref, out var externalId, out var listingUrl)) continue;
+
+                var price = ScraperHelpers.ParsePrice(
+                    tile.QuerySelector(".advert-location-price")?.TextContent ?? string.Empty);
                 if (price <= 0) continue;
 
-                var h3 = anchor.QuerySelector("h3");
-                var h3Text = h3?.TextContent.Trim() ?? string.Empty;
-
-                var commaIdx = h3Text.LastIndexOf(',');
-                var city = commaIdx >= 0 ? h3Text[(commaIdx + 1)..].Trim() : string.Empty;
+                var location = tile.QuerySelector("h3.location-text")?.TextContent.Trim() ?? string.Empty;
+                var commaIdx = location.LastIndexOf(',');
+                var city = commaIdx >= 0 ? location[(commaIdx + 1)..].Trim() : string.Empty;
                 if (string.IsNullOrEmpty(city)) continue;
 
-                var url = path.StartsWith("http") ? path : Domain + path;
-                listings.Add(new ScrapedListing(externalId, h3Text, city, price, url, SourceName));
+                var typeSpan = tile.QuerySelector("span.advert-location-header")?.TextContent.Trim() ?? string.Empty;
+                var title = string.IsNullOrEmpty(typeSpan) ? location : $"{typeSpan} {location}";
+
+                listings.Add(new ScrapedListing(externalId, title, city, price, listingUrl, SourceName));
             }
             catch (Exception ex)
             {
@@ -62,29 +64,28 @@ public sealed class DirectWonenScraper : IPropertyScraper
         return listings;
     }
 
-    private static string ToPath(string href)
-    {
-        if (Uri.TryCreate(href, UriKind.Absolute, out var uri))
-            return uri.AbsolutePath;
-        return href;
-    }
-
-    private static bool TryParseListingPath(string path, out string externalId)
+    private static bool TryParseCard(string rawHref, out string externalId, out string listingUrl)
     {
         externalId = string.Empty;
+        listingUrl = string.Empty;
 
-        // /huurwoningen-huren/{city}/{street}/{type}-{numericId}
-        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length != 4 || parts[0] != "huurwoningen-huren") return false;
+        // href is /premiumaccountpayment?ip=4&returnUrl={encoded listing url}&entityId={id}
+        if (!rawHref.Contains("entityId=")) return false;
 
-        var lastSegment = parts[3];
-        var dashIdx = lastSegment.LastIndexOf('-');
-        if (dashIdx < 0) return false;
+        var full = rawHref.StartsWith("http")
+            ? rawHref
+            : "https://directwonen.nl" + rawHref;
 
-        var numeric = lastSegment[(dashIdx + 1)..];
-        if (!long.TryParse(numeric, out _)) return false;
+        if (!Uri.TryCreate(full, UriKind.Absolute, out var uri)) return false;
 
-        externalId = numeric;
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        var id = query["entityId"];
+        var returnUrl = query["returnUrl"];
+
+        if (string.IsNullOrEmpty(id) || !long.TryParse(id, out _)) return false;
+
+        externalId = id;
+        listingUrl = string.IsNullOrEmpty(returnUrl) ? full : returnUrl;
         return true;
     }
 }

@@ -1,29 +1,69 @@
 using AngleSharp;
 using AngleSharp.Html.Dom;
-using IWEHZ.Infrastructure.Http;
+using Microsoft.Playwright;
 
 namespace IWEHZ.Scrapers;
 
 public sealed class ParariusScraper : IPropertyScraper
 {
-    private const string BaseUrl = "https://www.pararius.nl/huurwoningen/nederland";
-    private readonly string? _proxyUrl;
+    private const string Url = "https://www.pararius.nl/huurwoningen/nederland";
     private readonly ILogger<ParariusScraper> _logger;
 
     public string SourceName => "pararius";
 
-    public ParariusScraper(Microsoft.Extensions.Configuration.IConfiguration config, ILogger<ParariusScraper> logger)
+    public ParariusScraper(ILogger<ParariusScraper> logger)
     {
-        var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
-        _proxyUrl = sourceOverride is not null ? sourceOverride : config["Scraper:ProxyUrl"];
         _logger = logger;
     }
 
     public async Task<IReadOnlyList<ScrapedListing>> ScrapeAsync(CancellationToken ct)
     {
-        using var http = ScraperHttpClientFactory.Create(_proxyUrl);
+        using var playwright = await Playwright.CreateAsync();
 
-        var html = await http.GetStringAsync(BaseUrl, ct);
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            Headless = true,
+            Args =
+            [
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ],
+        });
+
+        var page = await browser.NewPageAsync(new BrowserNewPageOptions
+        {
+            UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            ExtraHTTPHeaders = new Dictionary<string, string>
+            {
+                ["Accept-Language"] = "nl-NL,nl;q=0.9,en-US;q=0.8,en;q=0.7",
+            },
+        });
+
+        await page.AddInitScriptAsync("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})");
+
+        await page.GotoAsync(Url, new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle,
+            Timeout = 60_000,
+        });
+
+        try
+        {
+            await page.WaitForSelectorAsync("section.listing-search-item", new PageWaitForSelectorOptions
+            {
+                Timeout = 15_000,
+            });
+        }
+        catch (TimeoutException)
+        {
+            _logger.LogWarning("Pararius: listing selector not found — page may have changed or challenge not passed");
+            return [];
+        }
+
+        var html = await page.ContentAsync();
+        await page.CloseAsync();
 
         var context = BrowsingContext.New(Configuration.Default);
         var document = await context.OpenAsync(req => req.Content(html), ct);
@@ -43,11 +83,9 @@ public sealed class ParariusScraper : IPropertyScraper
 
                 var title = anchor.TextContent.Trim();
 
-                var cityEl = article.QuerySelector(".listing-search-item__sub-title");
-                var city = cityEl?.TextContent.Trim() ?? string.Empty;
-
-                var priceEl = article.QuerySelector(".listing-search-item__price");
-                var price = ScraperHelpers.ParsePrice(priceEl?.TextContent ?? string.Empty);
+                var city = article.QuerySelector(".listing-search-item__sub-title")?.TextContent.Trim() ?? string.Empty;
+                var price = ScraperHelpers.ParsePrice(
+                    article.QuerySelector(".listing-search-item__price")?.TextContent ?? string.Empty);
                 if (price <= 0) continue;
 
                 listings.Add(new ScrapedListing(externalId, title, city, price, href, SourceName));

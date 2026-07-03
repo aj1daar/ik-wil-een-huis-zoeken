@@ -156,6 +156,15 @@ public sealed class ScraperWorker(
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
 
+        // Mark listings from this source that are no longer in the current scrape as unavailable
+        var currentExternalIds = listings.Select(l => l.ExternalId).ToList();
+        var delistedCount = await db.RentalListings
+            .Where(l => l.Source == scraper.SourceName && l.IsAvailable && !currentExternalIds.Contains(l.ExternalId))
+            .ExecuteUpdateAsync(s => s.SetProperty(l => l.IsAvailable, false), ct);
+
+        if (delistedCount > 0)
+            logger.LogInformation("{Source} marked {Count} listings as unavailable", scraper.SourceName, delistedCount);
+
         var newEntities = new List<RentalListing>();
         var priceDropEntities = new List<RentalListing>();
 
@@ -166,17 +175,22 @@ public sealed class ScraperWorker(
 
             if (existing is not null)
             {
-                if (scraped.Price < existing.Price)
+                var needsUpdate = scraped.Price < existing.Price;
+                if (!existing.IsAvailable || needsUpdate)
                 {
                     await db.RentalListings
                         .Where(l => l.Id == existing.Id)
                         .ExecuteUpdateAsync(s => s
-                            .SetProperty(l => l.PreviousPrice, existing.Price)
-                            .SetProperty(l => l.Price, scraped.Price), ct);
+                            .SetProperty(l => l.IsAvailable, true)
+                            .SetProperty(l => l.PreviousPrice, needsUpdate ? existing.Price : existing.PreviousPrice)
+                            .SetProperty(l => l.Price, needsUpdate ? scraped.Price : existing.Price), ct);
 
-                    existing.PreviousPrice = existing.Price;
-                    existing.Price = scraped.Price;
-                    priceDropEntities.Add(existing);
+                    if (needsUpdate)
+                    {
+                        existing.PreviousPrice = existing.Price;
+                        existing.Price = scraped.Price;
+                        priceDropEntities.Add(existing);
+                    }
                 }
                 continue;
             }

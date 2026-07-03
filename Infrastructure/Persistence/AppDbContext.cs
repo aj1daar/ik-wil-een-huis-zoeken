@@ -66,6 +66,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.ContentFingerprint).HasColumnName("content_fingerprint").HasMaxLength(16);
             e.Property(x => x.SourceUrl).HasColumnName("source_url").HasMaxLength(2000);
             e.Property(x => x.ScrapedAt).HasColumnName("scraped_at");
+            e.Property(x => x.IsAvailable).HasColumnName("is_available");
             e.HasIndex(x => new { x.ExternalId, x.Source }).IsUnique();
         });
 

@@ -12,5 +12,6 @@ public class RentalListing
     public string ContentFingerprint { get; set; } = string.Empty;
     public string SourceUrl { get; set; } = string.Empty;
     public DateTime ScrapedAt { get; set; } = DateTime.UtcNow;
+    public bool IsAvailable { get; set; } = true;
     public ICollection<NotificationLog> NotificationLogs { get; set; } = [];
 }

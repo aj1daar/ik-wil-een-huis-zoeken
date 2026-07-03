@@ -596,7 +596,7 @@ public sealed class MessageHandler(
 
         var listings = await db.RentalListings
             .AsNoTracking()
-            .Where(l => l.ScrapedAt >= since)
+            .Where(l => l.ScrapedAt >= since && l.IsAvailable)
             .OrderByDescending(l => l.ScrapedAt)
             .ToListAsync(ct);
 

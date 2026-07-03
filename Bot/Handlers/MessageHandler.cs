@@ -27,7 +27,7 @@ public sealed class MessageHandler(
     [
         [new KeyboardButton("📊 Status"), new KeyboardButton("⚙️ Settings")],
         [new KeyboardButton(isPaused ? "▶️ Resume" : "⏸ Pause"), new KeyboardButton("📍 My Cities")],
-        [new KeyboardButton("➕ More")],
+        [new KeyboardButton("🔍 Listings"), new KeyboardButton("➕ More")],
     ])
     { ResizeKeyboard = true };
 
@@ -113,6 +113,10 @@ public sealed class MessageHandler(
 
             case "/help" or "📋 Help":
                 await SendHelpMessageAsync(bot, chatId, ct);
+                return;
+
+            case "/listings" or "🔍 Listings":
+                await HandleListingsAsync(bot, user, chatId, ct);
                 return;
 
             case "➕ More":
@@ -572,6 +576,69 @@ public sealed class MessageHandler(
             parseMode: ParseMode.MarkdownV2,
             replyMarkup: toggleButton,
             cancellationToken: ct);
+    }
+
+    private async Task HandleListingsAsync(ITelegramBotClient bot, DomainUser user, long chatId, CancellationToken ct)
+    {
+        if (user.OnboardingState != OnboardingState.Completed)
+        {
+            await bot.SendMessage(chatId, "Please complete setup first with /start\\.",
+                parseMode: ParseMode.MarkdownV2, cancellationToken: ct);
+            return;
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+        var userCities = user.UserCities?.Select(uc => uc.City.NameNl.ToLowerInvariant()).ToHashSet()
+            ?? [];
+
+        var since = DateTime.UtcNow.AddHours(-48);
+
+        var listings = await db.RentalListings
+            .AsNoTracking()
+            .Where(l => l.ScrapedAt >= since)
+            .OrderByDescending(l => l.ScrapedAt)
+            .ToListAsync(ct);
+
+        var matched = listings.Where(l =>
+        {
+            if (user.MinBudget.HasValue && l.Price < user.MinBudget.Value) return false;
+            if (user.MaxBudget.HasValue && l.Price > user.MaxBudget.Value) return false;
+            return userCities.Contains(l.City.Trim().ToLowerInvariant());
+        }).ToList();
+
+        if (matched.Count == 0)
+        {
+            await bot.SendMessage(chatId,
+                "No listings found in the last 48 hours matching your filters\\.",
+                parseMode: ParseMode.MarkdownV2, cancellationToken: ct);
+            return;
+        }
+
+        // Send in chunks of 5 to stay within Telegram message size limits
+        const int chunkSize = 5;
+        var chunks = matched.Chunk(chunkSize).ToList();
+
+        await bot.SendMessage(chatId,
+            $"🔍 *{matched.Count} listing{(matched.Count == 1 ? "" : "s")} in the last 48h:*",
+            parseMode: ParseMode.MarkdownV2, cancellationToken: ct);
+
+        foreach (var chunk in chunks)
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var l in chunk)
+            {
+                sb.AppendLine(
+                    $"• [{MarkdownHelper.EscapeV2(l.Title)}]({MarkdownHelper.EscapeV2(l.SourceUrl)}) — " +
+                    $"📍 {MarkdownHelper.EscapeV2(l.City)} — " +
+                    $"💶 €{l.Price:N0} — " +
+                    $"_{MarkdownHelper.EscapeV2(l.Source)}_");
+            }
+            await bot.SendMessage(chatId, sb.ToString().TrimEnd(),
+                parseMode: ParseMode.MarkdownV2,
+                linkPreviewOptions: new Telegram.Bot.Types.LinkPreviewOptions { IsDisabled = true },
+                cancellationToken: ct);
+        }
     }
 
     private async Task HandleMyCitiesAsync(ITelegramBotClient bot, DomainUser user, long chatId, CancellationToken ct)

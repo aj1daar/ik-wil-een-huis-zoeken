@@ -7,12 +7,15 @@ namespace IWEHZ.Scrapers;
 public sealed class ParariusScraper : IPropertyScraper
 {
     private const string Url = "https://www.pararius.nl/huurwoningen/nederland";
+    private readonly string? _proxyUrl;
     private readonly ILogger<ParariusScraper> _logger;
 
     public string SourceName => "pararius";
 
-    public ParariusScraper(ILogger<ParariusScraper> logger)
+    public ParariusScraper(Microsoft.Extensions.Configuration.IConfiguration config, ILogger<ParariusScraper> logger)
     {
+        var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
+        _proxyUrl = sourceOverride is not null ? sourceOverride : config["Scraper:ProxyUrl"];
         _logger = logger;
     }
 
@@ -20,9 +23,28 @@ public sealed class ParariusScraper : IPropertyScraper
     {
         using var playwright = await Playwright.CreateAsync();
 
+        Microsoft.Playwright.Proxy? playwrightProxy = null;
+        if (!string.IsNullOrWhiteSpace(_proxyUrl) && Uri.TryCreate(_proxyUrl, UriKind.Absolute, out var proxyUri))
+        {
+            var server = $"{proxyUri.Scheme}://{proxyUri.Host}:{proxyUri.Port}";
+            playwrightProxy = new Microsoft.Playwright.Proxy { Server = server };
+
+            if (!string.IsNullOrEmpty(proxyUri.UserInfo))
+            {
+                var colonIdx = proxyUri.UserInfo.IndexOf(':');
+                playwrightProxy.Username = colonIdx >= 0
+                    ? Uri.UnescapeDataString(proxyUri.UserInfo[..colonIdx])
+                    : Uri.UnescapeDataString(proxyUri.UserInfo);
+                playwrightProxy.Password = colonIdx >= 0
+                    ? Uri.UnescapeDataString(proxyUri.UserInfo[(colonIdx + 1)..])
+                    : string.Empty;
+            }
+        }
+
         await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
             Headless = true,
+            Proxy = playwrightProxy,
             Args =
             [
                 "--disable-blink-features=AutomationControlled",

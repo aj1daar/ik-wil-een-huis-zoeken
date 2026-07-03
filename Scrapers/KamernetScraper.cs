@@ -6,7 +6,7 @@ namespace IWEHZ.Scrapers;
 
 public sealed class KamernetScraper : IPropertyScraper
 {
-    private const string BaseUrl = "https://www.kamernet.nl/huren/appartement-nederland";
+    private const string BaseUrl = "https://kamernet.nl/huren/appartement-nederland";
     private readonly string? _proxyUrl;
     private readonly ILogger<KamernetScraper> _logger;
 
@@ -46,7 +46,7 @@ public sealed class KamernetScraper : IPropertyScraper
                     ?? $"Huurwoning {city}";
 
                 listings.Add(new ScrapedListing(externalId, title, city, price,
-                    "https://www.kamernet.nl" + href, SourceName));
+                    "https://kamernet.nl" + href, SourceName));
             }
             catch (Exception ex)
             {

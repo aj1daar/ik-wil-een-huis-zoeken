@@ -67,7 +67,7 @@ public sealed class ParariusScraper : IPropertyScraper
 
         await page.GotoAsync(Url, new PageGotoOptions
         {
-            WaitUntil = WaitUntilState.NetworkIdle,
+            WaitUntil = WaitUntilState.DomContentLoaded,
             Timeout = 60_000,
         });
 
@@ -75,7 +75,7 @@ public sealed class ParariusScraper : IPropertyScraper
         {
             await page.WaitForSelectorAsync("section.listing-search-item", new PageWaitForSelectorOptions
             {
-                Timeout = 15_000,
+                Timeout = 45_000,
             });
         }
         catch (TimeoutException)

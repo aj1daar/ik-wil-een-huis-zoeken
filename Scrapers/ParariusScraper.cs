@@ -67,7 +67,7 @@ public sealed class ParariusScraper : IPropertyScraper
 
         await page.GotoAsync(Url, new PageGotoOptions
         {
-            WaitUntil = WaitUntilState.DomContentLoaded,
+            WaitUntil = WaitUntilState.DOMContentLoaded,
             Timeout = 60_000,
         });
 

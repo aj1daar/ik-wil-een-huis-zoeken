@@ -5,6 +5,7 @@ using IWEHZ.Scrapers;
 using IWEHZ.Services;
 using IWEHZ.Workers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Telegram.Bot;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,7 +17,8 @@ builder.Configuration
 
 builder.Services.AddDbContextFactory<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres"))
-           .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking));
+           .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
+           .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
 
 var botToken = builder.Configuration["Telegram:BotToken"]
     ?? throw new InvalidOperationException("Telegram:BotToken is required");

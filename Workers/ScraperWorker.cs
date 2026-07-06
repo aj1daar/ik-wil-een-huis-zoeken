@@ -47,6 +47,14 @@ public sealed class ScraperWorker(
                 {
                     return;
                 }
+                catch (AllProxyAttemptsBlockedException ex)
+                {
+                    logger.LogWarning("Scraper {Source} blocked on all {Attempts} proxy attempts", ex.SourceName, ex.Attempts);
+                    await adminNotifier.NotifyAsync(
+                        $"{scraper.SourceName}:proxy-blocked",
+                        $"🚫 [{scraper.SourceName}] all {ex.Attempts} proxy IPs blocked by Cloudflare\n{DateTime.UtcNow:u}",
+                        cooldown: TimeSpan.FromHours(4));
+                }
                 catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
                 {
                     logger.LogWarning("Scraper {Source} blocked with 403", scraper.SourceName);

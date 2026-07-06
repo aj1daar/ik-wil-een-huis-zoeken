@@ -32,8 +32,7 @@ public sealed class ParariusScraper : IPropertyScraper
                 await Task.Delay(TimeSpan.FromSeconds(3), ct);
         }
 
-        _logger.LogWarning("Pararius: all {Max} attempts failed — Cloudflare challenge not passed", MaxAttempts);
-        return [];
+        throw new AllProxyAttemptsBlockedException(SourceName, MaxAttempts);
     }
 
     private async Task<IReadOnlyList<ScrapedListing>?> TryAttemptAsync(int attempt, CancellationToken ct)

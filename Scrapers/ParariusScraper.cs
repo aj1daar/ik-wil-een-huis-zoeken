@@ -7,6 +7,7 @@ namespace IWEHZ.Scrapers;
 public sealed class ParariusScraper : IPropertyScraper
 {
     private const string Url = "https://www.pararius.nl/huurwoningen/nederland";
+    private const int MaxAttempts = 3;
     private readonly string? _proxyUrl;
     private readonly ILogger<ParariusScraper> _logger;
 
@@ -20,6 +21,22 @@ public sealed class ParariusScraper : IPropertyScraper
     }
 
     public async Task<IReadOnlyList<ScrapedListing>> ScrapeAsync(CancellationToken ct)
+    {
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        {
+            var listings = await TryAttemptAsync(attempt, ct);
+            if (listings is not null)
+                return listings;
+
+            if (attempt < MaxAttempts)
+                await Task.Delay(TimeSpan.FromSeconds(3), ct);
+        }
+
+        _logger.LogWarning("Pararius: all {Max} attempts failed — Cloudflare challenge not passed", MaxAttempts);
+        return [];
+    }
+
+    private async Task<IReadOnlyList<ScrapedListing>?> TryAttemptAsync(int attempt, CancellationToken ct)
     {
         using var playwright = await Playwright.CreateAsync();
 
@@ -80,8 +97,9 @@ public sealed class ParariusScraper : IPropertyScraper
         }
         catch (TimeoutException)
         {
-            _logger.LogWarning("Pararius: listing selector not found — page may have changed or challenge not passed");
-            return [];
+            _logger.LogWarning("Pararius: attempt {Attempt}/{Max} — selector not found, retrying with new IP",
+                attempt, MaxAttempts);
+            return null;
         }
 
         var html = await page.ContentAsync();

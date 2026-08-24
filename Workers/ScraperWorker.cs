@@ -1,4 +1,3 @@
-using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using IWEHZ.Domain.Models;
@@ -17,14 +16,6 @@ public sealed class ScraperWorker(
     IConfiguration config,
     ILogger<ScraperWorker> logger) : BackgroundService
 {
-    private static readonly HashSet<HttpStatusCode> RetryableCodes =
-    [
-        HttpStatusCode.InternalServerError,
-        HttpStatusCode.BadGateway,
-        HttpStatusCode.ServiceUnavailable,
-        HttpStatusCode.GatewayTimeout,
-    ];
-
     private readonly Dictionary<string, DateTime> _lastRun = new();
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -49,26 +40,11 @@ public sealed class ScraperWorker(
                 }
                 catch (AllProxyAttemptsBlockedException ex)
                 {
-                    logger.LogWarning("Scraper {Source} blocked on all {Attempts} proxy attempts", ex.SourceName, ex.Attempts);
+                    logger.LogWarning("Scraper {Source} blocked on all {Attempts} attempts", ex.SourceName, ex.Attempts);
                     await adminNotifier.NotifyAsync(
                         $"{scraper.SourceName}:proxy-blocked",
-                        $"🚫 [{scraper.SourceName}] all {ex.Attempts} proxy IPs blocked by Cloudflare\n{DateTime.UtcNow:u}",
+                        $"🚫 [{scraper.SourceName}] blocked on all {ex.Attempts} attempts\n{DateTime.UtcNow:u}",
                         cooldown: TimeSpan.FromHours(4));
-                }
-                catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
-                {
-                    logger.LogWarning("Scraper {Source} blocked with 403", scraper.SourceName);
-                    await adminNotifier.NotifyAsync(
-                        $"{scraper.SourceName}:403",
-                        $"🚫 [{scraper.SourceName}] blocked — 403 Forbidden\n{DateTime.UtcNow:u}");
-                }
-                catch (HttpRequestException ex)
-                {
-                    var code = ex.StatusCode.HasValue ? (int)ex.StatusCode : 0;
-                    logger.LogWarning(ex, "Scraper {Source} HTTP error {Code}", scraper.SourceName, code);
-                    await adminNotifier.NotifyAsync(
-                        $"{scraper.SourceName}:http:{code}",
-                        $"⚠️ [{scraper.SourceName}] HTTP {code}\n{DateTime.UtcNow:u}");
                 }
                 catch (Exception ex)
                 {
@@ -120,26 +96,26 @@ public sealed class ScraperWorker(
                 await RunScraperAsync(scraper, ct);
                 return;
             }
-            catch (HttpRequestException ex) when (
-                attempt < maxAttempts &&
-                ex.StatusCode.HasValue &&
-                RetryableCodes.Contains(ex.StatusCode.Value))
+            catch (HttpRequestException ex) when (attempt < maxAttempts)
             {
+                var code = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : 0;
                 logger.LogWarning("Scraper {Source} attempt {Attempt}/{Max} got HTTP {Code}, retrying in {Delay}s",
-                    scraper.SourceName, attempt, maxAttempts, (int)ex.StatusCode.Value, attempt * 3);
+                    scraper.SourceName, attempt, maxAttempts, code, attempt * 3);
                 await Task.Delay(TimeSpan.FromSeconds(attempt * 3), ct);
             }
-            catch (HttpRequestException ex) when (attempt < maxAttempts && !ex.StatusCode.HasValue)
+            catch (HttpRequestException)
             {
-                logger.LogWarning("Scraper {Source} attempt {Attempt}/{Max} network error, retrying in {Delay}s",
-                    scraper.SourceName, attempt, maxAttempts, attempt * 3);
-                await Task.Delay(TimeSpan.FromSeconds(attempt * 3), ct);
+                throw new AllProxyAttemptsBlockedException(scraper.SourceName, maxAttempts);
             }
             catch (TaskCanceledException) when (attempt < maxAttempts && !ct.IsCancellationRequested)
             {
                 logger.LogWarning("Scraper {Source} attempt {Attempt}/{Max} timed out, retrying in {Delay}s",
                     scraper.SourceName, attempt, maxAttempts, attempt * 10);
                 await Task.Delay(TimeSpan.FromSeconds(attempt * 10), ct);
+            }
+            catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new AllProxyAttemptsBlockedException(scraper.SourceName, maxAttempts);
             }
         }
     }

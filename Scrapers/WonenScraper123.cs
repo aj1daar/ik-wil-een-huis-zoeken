@@ -20,7 +20,7 @@ public sealed class WonenScraper123 : IPropertyScraper
     public WonenScraper123(Microsoft.Extensions.Configuration.IConfiguration config, IDbContextFactory<AppDbContext> dbFactory, ILogger<WonenScraper123> logger)
     {
         var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
-        _proxyUrl = sourceOverride is not null ? sourceOverride : config["Scraper:ProxyUrl"];
+        _proxyUrl = string.IsNullOrWhiteSpace(sourceOverride) ? config["Scraper:ProxyUrl"] : sourceOverride;
         _dbFactory = dbFactory;
         _logger = logger;
     }

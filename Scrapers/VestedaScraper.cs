@@ -14,7 +14,7 @@ public sealed class VestedaScraper : IPropertyScraper
     public VestedaScraper(IConfiguration config, ILogger<VestedaScraper> logger)
     {
         var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
-        _proxyUrl = sourceOverride is not null ? sourceOverride : config["Scraper:ProxyUrl"];
+        _proxyUrl = string.IsNullOrWhiteSpace(sourceOverride) ? config["Scraper:ProxyUrl"] : sourceOverride;
         _logger = logger;
     }
 

@@ -16,7 +16,7 @@ public sealed class ParariusScraper : IPropertyScraper
     public ParariusScraper(Microsoft.Extensions.Configuration.IConfiguration config, ILogger<ParariusScraper> logger)
     {
         var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
-        _proxyUrl = sourceOverride is not null ? sourceOverride : config["Scraper:ProxyUrl"];
+        _proxyUrl = string.IsNullOrWhiteSpace(sourceOverride) ? config["Scraper:ProxyUrl"] : sourceOverride;
         _logger = logger;
     }
 

@@ -15,7 +15,7 @@ public sealed class DirectWonenScraper : IPropertyScraper
     public DirectWonenScraper(Microsoft.Extensions.Configuration.IConfiguration config, ILogger<DirectWonenScraper> logger)
     {
         var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
-        _proxyUrl = sourceOverride is not null ? sourceOverride : config["Scraper:ProxyUrl"];
+        _proxyUrl = string.IsNullOrWhiteSpace(sourceOverride) ? config["Scraper:ProxyUrl"] : sourceOverride;
         _logger = logger;
     }
 

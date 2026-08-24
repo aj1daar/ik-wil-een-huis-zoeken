@@ -22,7 +22,7 @@ public sealed class KamernetScraper : IPropertyScraper
     public async Task<IReadOnlyList<ScrapedListing>> ScrapeAsync(CancellationToken ct)
     {
         using var http = ScraperHttpClientFactory.Create(_proxyUrl);
-        http.DefaultRequestHeaders.TryAddWithoutValidation("Referer", "https://www.kamernet.nl/");
+        http.DefaultRequestHeaders.TryAddWithoutValidation("Referer", "https://kamernet.nl/");
 
         var html = await http.GetStringAsync(BaseUrl, ct);
 

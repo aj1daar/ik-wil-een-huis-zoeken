@@ -32,7 +32,7 @@ public sealed class ParariusScraper : IPropertyScraper
                 await Task.Delay(TimeSpan.FromSeconds(3), ct);
         }
 
-        throw new AllProxyAttemptsBlockedException(SourceName, MaxAttempts);
+        throw new AllProxyAttemptsBlockedException(SourceName, MaxAttempts, "selector timeout");
     }
 
     private async Task<IReadOnlyList<ScrapedListing>?> TryAttemptAsync(int attempt, CancellationToken ct)

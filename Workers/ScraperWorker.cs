@@ -40,10 +40,11 @@ public sealed class ScraperWorker(
                 }
                 catch (AllProxyAttemptsBlockedException ex)
                 {
-                    logger.LogWarning("Scraper {Source} blocked on all {Attempts} attempts", ex.SourceName, ex.Attempts);
+                    logger.LogWarning("Scraper {Source} blocked on all {Attempts} attempts ({Reason})", ex.SourceName, ex.Attempts, ex.Reason);
+                    var reasonSuffix = ex.Reason is null ? "" : $" (last: {ex.Reason})";
                     await adminNotifier.NotifyAsync(
                         $"{scraper.SourceName}:proxy-blocked",
-                        $"🚫 [{scraper.SourceName}] blocked on all {ex.Attempts} attempts\n{DateTime.UtcNow:u}",
+                        $"🚫 [{scraper.SourceName}] blocked on all {ex.Attempts} attempts{reasonSuffix}\n{DateTime.UtcNow:u}",
                         cooldown: TimeSpan.FromHours(4));
                 }
                 catch (Exception ex)
@@ -103,9 +104,10 @@ public sealed class ScraperWorker(
                     scraper.SourceName, attempt, maxAttempts, code, attempt * 3);
                 await Task.Delay(TimeSpan.FromSeconds(attempt * 3), ct);
             }
-            catch (HttpRequestException)
+            catch (HttpRequestException ex)
             {
-                throw new AllProxyAttemptsBlockedException(scraper.SourceName, maxAttempts);
+                var reason = ex.StatusCode.HasValue ? $"HTTP {(int)ex.StatusCode.Value}" : ex.Message;
+                throw new AllProxyAttemptsBlockedException(scraper.SourceName, maxAttempts, reason);
             }
             catch (TaskCanceledException) when (attempt < maxAttempts && !ct.IsCancellationRequested)
             {
@@ -115,7 +117,7 @@ public sealed class ScraperWorker(
             }
             catch (TaskCanceledException) when (!ct.IsCancellationRequested)
             {
-                throw new AllProxyAttemptsBlockedException(scraper.SourceName, maxAttempts);
+                throw new AllProxyAttemptsBlockedException(scraper.SourceName, maxAttempts, "timeout");
             }
         }
     }

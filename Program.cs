@@ -31,6 +31,8 @@ builder.Services.AddSingleton<IPropertyScraper, KamernetScraper>();
 builder.Services.AddSingleton<IPropertyScraper, DirectWonenScraper>();
 builder.Services.AddSingleton<IPropertyScraper, NederwoonScraper>();
 builder.Services.AddSingleton<IPropertyScraper, WonenScraper123>();
+builder.Services.AddSingleton<IPropertyScraper, HuurstuntScraper>();
+builder.Services.AddSingleton<IPropertyScraper, VbtScraper>();
 
 builder.Services.AddSingleton<UserService>();
 builder.Services.AddSingleton<CityService>();

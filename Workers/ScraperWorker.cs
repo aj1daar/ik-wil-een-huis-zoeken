@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using IWEHZ.Domain.Models;
+using IWEHZ.Infrastructure.Http;
 using IWEHZ.Infrastructure.Persistence;
 using IWEHZ.Scrapers;
 using IWEHZ.Services;
@@ -13,10 +14,12 @@ public sealed class ScraperWorker(
     IDbContextFactory<AppDbContext> dbFactory,
     NotificationDispatcher dispatcher,
     AdminNotifier adminNotifier,
+    ScraperFetcher fetcher,
     IConfiguration config,
     ILogger<ScraperWorker> logger) : BackgroundService
 {
     private readonly Dictionary<string, DateTime> _lastRun = new();
+    private (int Used, int Limit, DateTime CheckedAt)? _credits;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -25,6 +28,12 @@ public sealed class ScraperWorker(
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            if (await IsCreditBudgetExhaustedAsync(stoppingToken))
+            {
+                await Task.Delay(TimeSpan.FromMinutes(30), stoppingToken);
+                continue;
+            }
+
             foreach (var scraper in scrapers)
             {
                 if (stoppingToken.IsCancellationRequested) return;
@@ -37,6 +46,22 @@ public sealed class ScraperWorker(
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
                     return;
+                }
+                catch (ScraperApiAccountException ex)
+                {
+                    logger.LogError("ScraperAPI account failure (HTTP {Code}) — skipping remaining sources this cycle", ex.StatusCode);
+                    var detail = ex.StatusCode switch
+                    {
+                        401 => "bad API key",
+                        403 => "out of credits",
+                        429 => "concurrency limit hit",
+                        _ => $"HTTP {ex.StatusCode}",
+                    };
+                    await adminNotifier.NotifyAsync(
+                        "scraperapi:account",
+                        $"⚠️ ScraperAPI problem: {detail} (HTTP {ex.StatusCode}). All scrapers paused until resolved.\n{DateTime.UtcNow:u}",
+                        cooldown: TimeSpan.FromHours(1));
+                    break;
                 }
                 catch (AllProxyAttemptsBlockedException ex)
                 {
@@ -78,6 +103,34 @@ public sealed class ScraperWorker(
         return Convert.ToHexString(hash)[..16];
     }
 
+    // Free-tier guard: stop all scraping once ScraperAPI credit usage crosses the
+    // configured ratio, so a busy month can't spill past the 1,000-credit plan.
+    // The /account check is free and cached for an hour.
+    private async Task<bool> IsCreditBudgetExhaustedAsync(CancellationToken ct)
+    {
+        if (!fetcher.UsesScraperApi) return false;
+
+        var stopRatio = config.GetValue("Scraper:ScraperApiCreditStopRatio", 0.95);
+        if (stopRatio <= 0) return false;
+
+        if (_credits is null || DateTime.UtcNow - _credits.Value.CheckedAt > TimeSpan.FromHours(1))
+        {
+            var usage = await fetcher.GetCreditUsageAsync(ct);
+            if (usage is null) return false; // check failed — don't block scraping
+            _credits = (usage.Value.Used, usage.Value.Limit, DateTime.UtcNow);
+        }
+
+        var (used, limit, _) = _credits.Value;
+        if (limit <= 0 || used < limit * stopRatio) return false;
+
+        logger.LogWarning("ScraperAPI credit budget reached: {Used}/{Limit} — pausing all scrapers", used, limit);
+        await adminNotifier.NotifyAsync(
+            "scraperapi:budget",
+            $"🧮 ScraperAPI credits {used}/{limit} (≥{stopRatio:P0}). Scraping paused until the monthly reset.\n{DateTime.UtcNow:u}",
+            cooldown: TimeSpan.FromHours(12), ct: ct);
+        return true;
+    }
+
     private bool IsDue(string sourceName)
     {
         var seconds = config.GetValue<int>($"Scraper:SourceIntervalSeconds:{sourceName}", 0);
@@ -96,6 +149,10 @@ public sealed class ScraperWorker(
             {
                 await RunScraperAsync(scraper, ct);
                 return;
+            }
+            catch (HttpRequestException ex) when (IsScraperApiAccountFailure(ex))
+            {
+                throw new ScraperApiAccountException((int)ex.StatusCode!.Value);
             }
             catch (HttpRequestException ex) when (attempt < maxAttempts)
             {
@@ -121,6 +178,12 @@ public sealed class ScraperWorker(
             }
         }
     }
+
+    // 401 bad key, 403 out of credits, 429 concurrency limit — all account-level, not a site block.
+    private static bool IsScraperApiAccountFailure(HttpRequestException ex) =>
+        ex.StatusCode is System.Net.HttpStatusCode.Unauthorized
+            or System.Net.HttpStatusCode.Forbidden
+            or System.Net.HttpStatusCode.TooManyRequests;
 
     private async Task RunScraperAsync(IPropertyScraper scraper, CancellationToken ct)
     {

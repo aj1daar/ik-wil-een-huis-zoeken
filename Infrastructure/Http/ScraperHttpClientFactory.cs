@@ -56,6 +56,17 @@ public static class ScraperHttpClientFactory
             Timeout = TimeSpan.FromSeconds(60),
         };
 
+        ApplyDefaultHeaders(client);
+        return client;
+    }
+
+    /// <summary>
+    /// Sets a randomised browser-like default header set on <paramref name="client"/>.
+    /// Shared with <see cref="ScraperFetcher"/> so ScraperAPI-proxied clients look the
+    /// same as direct ones.
+    /// </summary>
+    public static void ApplyDefaultHeaders(HttpClient client)
+    {
         var ua = UserAgents[Random.Shared.Next(UserAgents.Length)];
 
         client.DefaultRequestHeaders.Clear();
@@ -82,7 +93,5 @@ public static class ScraperHttpClientFactory
             client.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Ch-Ua-Mobile", "?0");
             client.DefaultRequestHeaders.TryAddWithoutValidation("Sec-Ch-Ua-Platform", ua.Contains("Macintosh") ? "\"macOS\"" : "\"Windows\"");
         }
-
-        return client;
     }
 }

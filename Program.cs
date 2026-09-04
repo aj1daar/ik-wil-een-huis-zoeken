@@ -1,5 +1,6 @@
 using IWEHZ.Bot.Conversations;
 using IWEHZ.Bot.Handlers;
+using IWEHZ.Infrastructure.Http;
 using IWEHZ.Infrastructure.Persistence;
 using IWEHZ.Scrapers;
 using IWEHZ.Services;
@@ -26,6 +27,7 @@ var botToken = builder.Configuration["Telegram:BotToken"]
 builder.Services.AddSingleton<ITelegramBotClient>(_ => new TelegramBotClient(botToken));
 
 builder.Services.AddSingleton<ConversationStateCache>();
+builder.Services.AddSingleton<ScraperFetcher>();
 builder.Services.AddSingleton<IPropertyScraper, ParariusScraper>();
 builder.Services.AddSingleton<IPropertyScraper, KamernetScraper>();
 builder.Services.AddSingleton<IPropertyScraper, DirectWonenScraper>();

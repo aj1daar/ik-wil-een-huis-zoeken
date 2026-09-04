@@ -11,16 +11,15 @@ namespace IWEHZ.Scrapers;
 public sealed class WonenScraper123 : IPropertyScraper
 {
     private const string BaseUrl = "https://www.123wonen.nl/huurwoningen/in/";
-    private readonly string? _proxyUrl;
+    private readonly ScraperFetcher _fetcher;
     private readonly IDbContextFactory<AppDbContext> _dbFactory;
     private readonly ILogger<WonenScraper123> _logger;
 
     public string SourceName => "123wonen";
 
-    public WonenScraper123(Microsoft.Extensions.Configuration.IConfiguration config, IDbContextFactory<AppDbContext> dbFactory, ILogger<WonenScraper123> logger)
+    public WonenScraper123(ScraperFetcher fetcher, IDbContextFactory<AppDbContext> dbFactory, ILogger<WonenScraper123> logger)
     {
-        var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
-        _proxyUrl = string.IsNullOrWhiteSpace(sourceOverride) ? config["Scraper:ProxyUrl"] : sourceOverride;
+        _fetcher = fetcher;
         _dbFactory = dbFactory;
         _logger = logger;
     }
@@ -74,7 +73,7 @@ public sealed class WonenScraper123 : IPropertyScraper
 
     private async Task<List<ScrapedListing>> ScrapeCityAsync(string citySlug, CancellationToken ct)
     {
-        using var http = ScraperHttpClientFactory.Create(_proxyUrl);
+        using var http = _fetcher.CreateClient(SourceName);
         http.DefaultRequestHeaders.TryAddWithoutValidation("Referer", "https://www.123wonen.nl/");
 
         var html = await http.GetStringAsync(BaseUrl + citySlug + "/", ct);

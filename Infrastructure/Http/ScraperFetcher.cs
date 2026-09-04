@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 
 namespace IWEHZ.Infrastructure.Http;
@@ -61,11 +62,14 @@ public sealed class ScraperFetcher(IConfiguration config)
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
             // ScraperAPI's proxy mode terminates TLS itself, dynamically re-signing each
             // target's certificate with its own private root (documented requirement, not
-            // optional). That root isn't in our trust store, so chain validation always fails —
-            // but the leaf still matches the real target hostname, so only chain-trust errors
-            // are waived here; a genuine MITM (wrong host, no cert) still fails the connection.
-            ServerCertificateCustomValidationCallback = (_, _, _, errors) =>
-                (errors & ~SslPolicyErrors.RemoteCertificateChainErrors) == SslPolicyErrors.None,
+            // optional) — the leaf still matches the real target hostname, so a name mismatch
+            // or missing cert still fails below. For the resulting chain error, only accept the
+            // two statuses that private, untrusted root actually produces (UntrustedRoot /
+            // PartialChain); anything else — expired, revoked, not yet valid, cyclic — still fails.
+            ServerCertificateCustomValidationCallback = (_, _, chain, errors) =>
+                errors == SslPolicyErrors.None ||
+                (errors == SslPolicyErrors.RemoteCertificateChainErrors && chain is not null &&
+                 chain.ChainStatus.All(s => s.Status is X509ChainStatusFlags.UntrustedRoot or X509ChainStatusFlags.PartialChain)),
         };
 
         var client = new HttpClient(handler)

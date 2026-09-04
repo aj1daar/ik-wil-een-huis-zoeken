@@ -20,6 +20,7 @@ public sealed class ScraperWorker(
 {
     private readonly Dictionary<string, DateTime> _lastRun = new();
     private (int Used, int Limit, DateTime CheckedAt)? _credits;
+    private DateTime? _accountPausedUntil;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -29,6 +30,14 @@ public sealed class ScraperWorker(
         while (!stoppingToken.IsCancellationRequested)
         {
             if (await IsCreditBudgetExhaustedAsync(stoppingToken))
+            {
+                await Task.Delay(TimeSpan.FromMinutes(30), stoppingToken);
+                continue;
+            }
+
+            // "Paused until resolved" from an account-level ScraperAPI failure — actually wait
+            // out the pause instead of retrying every ordinary inter-cycle delay (60-120s).
+            if (_accountPausedUntil is { } pausedUntil && DateTime.UtcNow < pausedUntil)
             {
                 await Task.Delay(TimeSpan.FromMinutes(30), stoppingToken);
                 continue;
@@ -57,10 +66,11 @@ public sealed class ScraperWorker(
                         429 => "concurrency limit hit",
                         _ => $"HTTP {ex.StatusCode}",
                     };
+                    _accountPausedUntil = DateTime.UtcNow.AddMinutes(30);
                     await adminNotifier.NotifyAsync(
                         "scraperapi:account",
-                        $"⚠️ ScraperAPI problem: {detail} (HTTP {ex.StatusCode}). All scrapers paused until resolved.\n{DateTime.UtcNow:u}",
-                        cooldown: TimeSpan.FromHours(1));
+                        $"⚠️ ScraperAPI problem: {detail} (HTTP {ex.StatusCode}). All scrapers paused for 30 minutes.\n{DateTime.UtcNow:u}",
+                        cooldown: TimeSpan.FromHours(1), ct: stoppingToken);
                     break;
                 }
                 catch (AllProxyAttemptsBlockedException ex)
@@ -70,14 +80,15 @@ public sealed class ScraperWorker(
                     await adminNotifier.NotifyAsync(
                         $"{scraper.SourceName}:proxy-blocked",
                         $"🚫 [{scraper.SourceName}] blocked on all {ex.Attempts} attempts{reasonSuffix}\n{DateTime.UtcNow:u}",
-                        cooldown: TimeSpan.FromHours(4));
+                        cooldown: TimeSpan.FromHours(4), ct: stoppingToken);
                 }
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Unhandled error in scraper {Source}", scraper.SourceName);
                     await adminNotifier.NotifyAsync(
                         $"{scraper.SourceName}:crash",
-                        $"❌ [{scraper.SourceName}] crashed: {ex.GetType().Name}: {ex.Message[..Math.Min(200, ex.Message.Length)]}\n{DateTime.UtcNow:u}");
+                        $"❌ [{scraper.SourceName}] crashed: {ex.GetType().Name}: {ex.Message[..Math.Min(200, ex.Message.Length)]}\n{DateTime.UtcNow:u}",
+                        ct: stoppingToken);
                 }
                 finally
                 {
@@ -197,7 +208,7 @@ public sealed class ScraperWorker(
             await adminNotifier.NotifyAsync(
                 $"{scraper.SourceName}:zero",
                 $"⚠️ [{scraper.SourceName}] returned 0 listings — site structure may have changed\n{DateTime.UtcNow:u}",
-                cooldown: TimeSpan.FromHours(4));
+                cooldown: TimeSpan.FromHours(4), ct: ct);
             return;
         }
 

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Security;
 using System.Text.Json;
 
 namespace IWEHZ.Infrastructure.Http;
@@ -58,11 +59,13 @@ public sealed class ScraperFetcher(IConfiguration config)
             UseProxy = true,
             AllowAutoRedirect = true,
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
-            // ScraperAPI's proxy mode terminates TLS itself and re-signs the response with its
-            // own certificate (documented requirement, not optional) — this handler only ever
-            // carries public rental-listing pages through ScraperAPI, never credentials of ours,
-            // and is never used for the direct-fetch (no API key) path above.
-            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+            // ScraperAPI's proxy mode terminates TLS itself, dynamically re-signing each
+            // target's certificate with its own private root (documented requirement, not
+            // optional). That root isn't in our trust store, so chain validation always fails —
+            // but the leaf still matches the real target hostname, so only chain-trust errors
+            // are waived here; a genuine MITM (wrong host, no cert) still fails the connection.
+            ServerCertificateCustomValidationCallback = (_, _, _, errors) =>
+                (errors & ~SslPolicyErrors.RemoteCertificateChainErrors) == SslPolicyErrors.None,
         };
 
         var client = new HttpClient(handler)

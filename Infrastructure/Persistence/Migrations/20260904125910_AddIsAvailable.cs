@@ -10,12 +10,8 @@ namespace IWEHZ.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<bool>(
-                name: "is_available",
-                table: "rental_listings",
-                type: "boolean",
-                nullable: false,
-                defaultValue: true);
+            migrationBuilder.Sql(
+                "ALTER TABLE rental_listings ADD COLUMN IF NOT EXISTS is_available boolean NOT NULL DEFAULT TRUE;");
         }
 
         /// <inheritdoc />

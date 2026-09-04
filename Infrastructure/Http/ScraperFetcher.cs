@@ -58,7 +58,10 @@ public sealed class ScraperFetcher(IConfiguration config)
             UseProxy = true,
             AllowAutoRedirect = true,
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
-            // ScraperAPI terminates TLS at its proxy with its own certificate.
+            // ScraperAPI's proxy mode terminates TLS itself and re-signs the response with its
+            // own certificate (documented requirement, not optional) — this handler only ever
+            // carries public rental-listing pages through ScraperAPI, never credentials of ours,
+            // and is never used for the direct-fetch (no API key) path above.
             ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
         };
 

@@ -19,7 +19,7 @@ public sealed class VbtScraper : IPropertyScraper
     public VbtScraper(ScraperFetcher fetcher, Microsoft.Extensions.Configuration.IConfiguration config, ILogger<VbtScraper> logger)
     {
         // Each page is a separate ScraperAPI request/credit — keep this low on the free plan.
-        _maxPages = Math.Max(1, config.GetValue("Scraper:Vbt_maxPages", 3));
+        _maxPages = Math.Max(1, config.GetValue("Scraper:VbtMaxPages", 3));
         _fetcher = fetcher;
         _logger = logger;
     }

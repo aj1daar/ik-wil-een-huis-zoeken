@@ -49,7 +49,7 @@ public sealed class ScraperWorker(
                 }
                 catch (ScraperApiAccountException ex)
                 {
-                    logger.LogError("ScraperAPI account failure (HTTP {Code}) — skipping remaining sources this cycle", ex.StatusCode);
+                    logger.LogError(ex, "ScraperAPI account failure (HTTP {Code}) — skipping remaining sources this cycle", ex.StatusCode);
                     var detail = ex.StatusCode switch
                     {
                         401 => "bad API key",

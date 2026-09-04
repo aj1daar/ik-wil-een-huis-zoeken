@@ -77,7 +77,7 @@ jobs:
           Environment=CONNECTIONSTRINGS__POSTGRES=${{ secrets.CONNECTIONSTRINGS__POSTGRES }}
           Environment=TELEGRAM__BOTTOKEN=${{ secrets.TELEGRAM__BOTTOKEN }}
           Environment=TELEGRAM__ADMINCHATID=${{ secrets.TELEGRAM__ADMINCHATID }}
-          Environment=SCRAPER__PROXYURL=${{ secrets.SCRAPER__PROXYURL }}
+          Environment=SCRAPER__SCRAPERAPIKEY=${{ secrets.SCRAPER__SCRAPERAPIKEY }}
 
           [Install]
           WantedBy=multi-user.target

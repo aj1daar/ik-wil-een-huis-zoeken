@@ -7,21 +7,20 @@ namespace IWEHZ.Scrapers;
 public sealed class DirectWonenScraper : IPropertyScraper
 {
     private const string BaseUrl = "https://directwonen.nl/huurwoningen-huren/nederland";
-    private readonly string? _proxyUrl;
+    private readonly ScraperFetcher _fetcher;
     private readonly ILogger<DirectWonenScraper> _logger;
 
     public string SourceName => "directwonen";
 
-    public DirectWonenScraper(Microsoft.Extensions.Configuration.IConfiguration config, ILogger<DirectWonenScraper> logger)
+    public DirectWonenScraper(ScraperFetcher fetcher, ILogger<DirectWonenScraper> logger)
     {
-        var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
-        _proxyUrl = string.IsNullOrWhiteSpace(sourceOverride) ? config["Scraper:ProxyUrl"] : sourceOverride;
+        _fetcher = fetcher;
         _logger = logger;
     }
 
     public async Task<IReadOnlyList<ScrapedListing>> ScrapeAsync(CancellationToken ct)
     {
-        using var http = ScraperHttpClientFactory.Create(_proxyUrl);
+        using var http = _fetcher.CreateClient(SourceName);
         http.DefaultRequestHeaders.TryAddWithoutValidation("Referer", "https://directwonen.nl/");
 
         var html = await http.GetStringAsync(BaseUrl, ct);

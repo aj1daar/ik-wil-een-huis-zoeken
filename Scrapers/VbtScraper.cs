@@ -10,29 +10,30 @@ public sealed class VbtScraper : IPropertyScraper
 {
     private const string BaseUrl = "https://vbtverhuurmakelaars.nl/woningen";
     private const string Source = "vbt";
-    private const int MaxPages = 60;
-    private readonly string? _proxyUrl;
+    private readonly int _maxPages;
+    private readonly ScraperFetcher _fetcher;
     private readonly ILogger<VbtScraper> _logger;
 
     public string SourceName => Source;
 
-    public VbtScraper(Microsoft.Extensions.Configuration.IConfiguration config, ILogger<VbtScraper> logger)
+    public VbtScraper(ScraperFetcher fetcher, Microsoft.Extensions.Configuration.IConfiguration config, ILogger<VbtScraper> logger)
     {
-        var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
-        _proxyUrl = string.IsNullOrWhiteSpace(sourceOverride) ? config["Scraper:ProxyUrl"] : sourceOverride;
+        // Each page is a separate ScraperAPI request/credit — keep this low on the free plan.
+        _maxPages = Math.Max(1, config.GetValue("Scraper:VbtMaxPages", 3));
+        _fetcher = fetcher;
         _logger = logger;
     }
 
     public async Task<IReadOnlyList<ScrapedListing>> ScrapeAsync(CancellationToken ct)
     {
-        using var http = ScraperHttpClientFactory.Create(_proxyUrl);
+        using var http = _fetcher.CreateClient(SourceName);
         http.DefaultRequestHeaders.TryAddWithoutValidation("Referer", "https://vbtverhuurmakelaars.nl/");
 
         var listings = new List<ScrapedListing>();
         var seen = new HashSet<string>();
 
         // /woningen, /woningen/2, /woningen/3, ... — site 404s past the last real page.
-        for (var page = 1; page <= MaxPages; page++)
+        for (var page = 1; page <= _maxPages; page++)
         {
             var pageUrl = page == 1 ? BaseUrl : $"{BaseUrl}/{page}";
 
@@ -61,7 +62,7 @@ public sealed class VbtScraper : IPropertyScraper
                 }
             }
 
-            if (page < MaxPages)
+            if (page < _maxPages)
                 await Task.Delay(TimeSpan.FromSeconds(1.5), ct);
         }
 

@@ -11,7 +11,7 @@ IWEHZ/
 ├── Domain/Models/          # User, City, UserCity, RentalListing, NotificationLog
 ├── Infrastructure/
 │   ├── Persistence/        # AppDbContext, EF Core migrations
-│   └── Http/               # ScraperHttpClientFactory (anti-bot headers, proxy)
+│   └── Http/               # ScraperFetcher / ScraperHttpClientFactory (ScraperAPI proxy, anti-bot headers)
 ├── Scrapers/               # IPropertyScraper + one implementation per source
 ├── Services/               # UserService, CityService, NotificationDispatcher, AdminNotifier
 ├── Workers/                # ScraperWorker, TelegramBotWorker, CleanupWorker
@@ -30,18 +30,31 @@ IWEHZ/
 
 ### Scrapers
 
-| Source | URL strategy | Proxy |
-|---|---|---|
-| Pararius | Single national page | Yes (every 4 h) |
-| Kamernet | Single national page | No |
-| 123wonen | One request per user-selected city | Yes (every 90 min) |
-| DirectWonen | Single national page | No |
-| Nederwoon | One request per user-selected city | No |
-| Vesteda | JSON API, lat/long radius search | No |
+All scrapers route through ScraperAPI's proxy endpoint (`Scraper:ScraperApiKey`). Geo-target
+is `eu` by default (`Scraper:ScraperApiCountry`) — the free/Hobby plan does not allow
+country-level targeting like `nl`. When the key is unset (local dev) `ScraperFetcher` falls
+back to a direct client.
 
-City-loop scrapers (123wonen, Nederwoon) query the database at scrape time and only request cities that at least one active user has selected — no unnecessary traffic.
+| Source | URL strategy | Default interval | Credits/run |
+|---|---|---|---|
+| Kamernet | Single national page | 4 h | 1 |
+| DirectWonen | Single national page | 6 h | 1 |
+| Huurstunt | Single national page (JSON-LD) | 8 h | 1 |
+| Nederwoon | One request per user-selected city | 18 h | ~1 per city |
+| 123wonen | One request per user-selected city | 24 h | ~1 per city |
+| vb&t | Paginated national list, capped at `Scraper:VbtMaxPages` (3) | 24 h | ~3 |
+| Pararius | Single national page, `render=true` (Cloudflare) | 72 h | 10 |
 
-Per-source proxy overrides can be set in config (`Scraper:SourceProxyUrl:{sourceName}`). An empty string disables the proxy for that source; omitting the key falls back to `Scraper:ProxyUrl`.
+Intervals live in `Scraper:SourceIntervalSeconds:{source}`. The defaults budget to
+roughly 800 credits/month so the bot stays inside the 1,000-credit free plan.
+City-loop scrapers (Nederwoon, 123wonen) only request cities at least one active user
+has selected, so their cost scales with sign-ups.
+
+**Credit safety net:** `ScraperWorker` checks ScraperAPI's `/account` endpoint (free,
+cached 1 h) at the top of each cycle and pauses **all** scraping once usage reaches
+`Scraper:ScraperApiCreditStopRatio` (0.95) of the plan limit, alerting once
+(`scraperapi:budget`). An account-level ScraperAPI failure (401/403/429) likewise raises
+one `scraperapi:account` alert and skips the rest of the run instead of one alert per source.
 
 ### Bot UX
 
@@ -77,7 +90,7 @@ Users interact via a persistent reply keyboard (bottom of chat) with a main menu
 | `CONNECTIONSTRINGS__POSTGRES` | `ConnectionStrings:Postgres` | Npgsql connection string |
 | `TELEGRAM__BOTTOKEN` | `Telegram:BotToken` | Token from [@BotFather](https://t.me/BotFather) |
 | `TELEGRAM__ADMINCHATID` | `Telegram:AdminChatId` | Your numeric Telegram chat ID — get it from [@userinfobot](https://t.me/userinfobot) |
-| `SCRAPER__PROXYURL` | `Scraper:ProxyUrl` | Optional HTTP proxy URL, e.g. `http://user:pass@host:3128` |
+| `SCRAPER__SCRAPERAPIKEY` | `Scraper:ScraperApiKey` | ScraperAPI key. Unset = direct fetch (no proxy). |
 
 ### Local development
 
@@ -95,7 +108,7 @@ Create `appsettings.Development.json` (gitignored):
   "Scraper": {
     "IntervalMinSeconds": 60,
     "IntervalMaxSeconds": 120,
-    "ProxyUrl": ""
+    "ScraperApiKey": ""
   }
 }
 ```

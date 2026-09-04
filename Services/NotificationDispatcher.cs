@@ -69,7 +69,12 @@ public sealed class NotificationDispatcher(
                 return user.UserCities.Any(uc =>
                     uc.City.NameNl.ToLowerInvariant() == cityNorm ||
                     uc.City.NameEn.ToLowerInvariant() == cityNorm);
-            }).ToList();
+            })
+                // Same batch can carry near-duplicate listings for one property (e.g. a
+                // multi-unit building split across sources or units) — collapse those too,
+                // not just ones already sent in an earlier batch.
+                .DistinctBy(listing => listing.ContentFingerprint)
+                .ToList();
 
             if (matched.Count == 0) continue;
 
@@ -176,7 +181,9 @@ public sealed class NotificationDispatcher(
     private static PropertyTypeFilter DetectPropertyType(RentalListing listing)
     {
         var t = listing.Title.ToLowerInvariant();
-        if (t.Contains("kamer") || t.Contains(" room") || listing.Source == "kamernet")
+        // Kamernet ("room network") only lists apartments on the URL we scrape — its titles
+        // say "Appartement", not a room count — so no source-level override; title wins.
+        if (t.Contains("kamer") || t.Contains(" room"))
             return Room;
         if (t.Contains("huis") || t.Contains("house") || t.Contains("villa") || t.Contains("woonhuis"))
             return House;

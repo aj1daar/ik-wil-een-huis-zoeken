@@ -8,21 +8,20 @@ public sealed class HuurstuntScraper : IPropertyScraper
 {
     private const string BaseUrl = "https://www.huurstunt.nl/huren/nederland";
     private const string Source = "huurstunt";
-    private readonly string? _proxyUrl;
+    private readonly ScraperFetcher _fetcher;
     private readonly ILogger<HuurstuntScraper> _logger;
 
     public string SourceName => Source;
 
-    public HuurstuntScraper(Microsoft.Extensions.Configuration.IConfiguration config, ILogger<HuurstuntScraper> logger)
+    public HuurstuntScraper(ScraperFetcher fetcher, ILogger<HuurstuntScraper> logger)
     {
-        var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
-        _proxyUrl = string.IsNullOrWhiteSpace(sourceOverride) ? config["Scraper:ProxyUrl"] : sourceOverride;
+        _fetcher = fetcher;
         _logger = logger;
     }
 
     public async Task<IReadOnlyList<ScrapedListing>> ScrapeAsync(CancellationToken ct)
     {
-        using var http = ScraperHttpClientFactory.Create(_proxyUrl);
+        using var http = _fetcher.CreateClient(SourceName);
         http.DefaultRequestHeaders.TryAddWithoutValidation("Referer", "https://www.huurstunt.nl/");
 
         var html = await http.GetStringAsync(BaseUrl, ct);

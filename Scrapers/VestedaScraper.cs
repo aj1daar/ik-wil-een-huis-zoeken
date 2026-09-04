@@ -6,21 +6,20 @@ namespace IWEHZ.Scrapers;
 public sealed class VestedaScraper : IPropertyScraper
 {
     private const string SearchUrl = "https://www.vesteda.com/api/units/search";
-    private readonly string? _proxyUrl;
+    private readonly ScraperFetcher _fetcher;
     private readonly ILogger<VestedaScraper> _logger;
 
     public string SourceName => "vesteda";
 
-    public VestedaScraper(IConfiguration config, ILogger<VestedaScraper> logger)
+    public VestedaScraper(ScraperFetcher fetcher, ILogger<VestedaScraper> logger)
     {
-        var sourceOverride = config[$"Scraper:SourceProxyUrl:{SourceName}"];
-        _proxyUrl = string.IsNullOrWhiteSpace(sourceOverride) ? config["Scraper:ProxyUrl"] : sourceOverride;
+        _fetcher = fetcher;
         _logger = logger;
     }
 
     public async Task<IReadOnlyList<ScrapedListing>> ScrapeAsync(CancellationToken ct)
     {
-        using var http = ScraperHttpClientFactory.Create(_proxyUrl);
+        using var http = _fetcher.CreateClient(SourceName);
         http.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "application/json, text/plain, */*");
         http.DefaultRequestHeaders.TryAddWithoutValidation("Referer", "https://www.vesteda.com/en/find-a-home");
         http.DefaultRequestHeaders.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");

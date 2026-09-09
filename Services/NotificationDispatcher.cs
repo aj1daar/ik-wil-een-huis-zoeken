@@ -80,16 +80,25 @@ public sealed class NotificationDispatcher(
 
             if (matched.Count == 0) continue;
 
-            await SendAlertAsync(user, matched, ct);
-
-            foreach (var listing in matched)
+            for (var i = 0; i < matched.Count; i++)
             {
+                // One message per listing so each alert is separately readable, forwardable,
+                // and — via the stored message id — separately withdrawable once it is let.
+                var messageId = await SendWithRetryAsync(
+                    user.TelegramChatId, user.Id, FormatSingle(matched[i]), ct);
+
                 db.NotificationLogs.Add(new NotificationLog
                 {
                     UserId = user.Id,
-                    ListingId = listing.Id,
+                    ListingId = matched[i].Id,
                     SentAt = DateTime.UtcNow,
+                    MessageId = messageId,
                 });
+
+                // Telegram throttles per-chat sends; space the messages out so a burst does not
+                // trip the 429 retry path for every listing after the first.
+                if (i < matched.Count - 1)
+                    await Task.Delay(InterMessageDelay, ct);
             }
         }
 
@@ -139,33 +148,20 @@ public sealed class NotificationDispatcher(
         }
     }
 
-    private async Task SendAlertAsync(User user, List<RentalListing> listings, CancellationToken ct)
-    {
-        for (var i = 0; i < listings.Count; i++)
-        {
-            // One message per listing so each alert is separately readable and forwardable.
-            await SendWithRetryAsync(user.TelegramChatId, user.Id, FormatSingle(listings[i]), ct);
-
-            // Telegram throttles per-chat sends; space the messages out so a burst does not
-            // trip the 429 retry path for every listing after the first.
-            if (i < listings.Count - 1)
-                await Task.Delay(InterMessageDelay, ct);
-        }
-    }
-
-    private async Task SendWithRetryAsync(long chatId, int userId, string message, CancellationToken ct)
+    /// <summary>Sends one alert; returns the Telegram message id, or null when every attempt failed.</summary>
+    private async Task<int?> SendWithRetryAsync(long chatId, int userId, string message, CancellationToken ct)
     {
         const int maxAttempts = 3;
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
             try
             {
-                await bot.SendMessage(
+                var sent = await bot.SendMessage(
                     chatId: chatId,
                     text: message,
                     parseMode: ParseMode.MarkdownV2,
                     cancellationToken: ct);
-                return;
+                return sent.MessageId;
             }
             catch (Telegram.Bot.Exceptions.ApiRequestException ex) when (ex.ErrorCode == 429 && attempt < maxAttempts)
             {
@@ -183,6 +179,8 @@ public sealed class NotificationDispatcher(
                 logger.LogWarning(ex, "Failed to send notification to user {UserId} after {Max} attempts", userId, maxAttempts);
             }
         }
+
+        return null;
     }
 
     private static PropertyTypeFilter DetectPropertyType(RentalListing listing)

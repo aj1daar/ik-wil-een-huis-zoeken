@@ -14,6 +14,7 @@ public sealed class ScraperWorker(
     IDbContextFactory<AppDbContext> dbFactory,
     NotificationDispatcher dispatcher,
     ListingAvailabilityVerifier availabilityVerifier,
+    ListingRetractor retractor,
     AdminNotifier adminNotifier,
     ScraperFetcher fetcher,
     IConfiguration config,
@@ -227,14 +228,24 @@ public sealed class ScraperWorker(
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
 
-        // Mark listings from this source that are no longer in the current scrape as unavailable
+        // Mark listings from this source that are no longer in the current scrape as unavailable.
+        // Ids are read first so the alerts already sent for them can be pulled back.
         var currentExternalIds = listings.Select(l => l.ExternalId).ToList();
-        var delistedCount = await db.RentalListings
+        var delistedIds = await db.RentalListings
             .Where(l => l.Source == scraper.SourceName && l.IsAvailable && !currentExternalIds.Contains(l.ExternalId))
-            .ExecuteUpdateAsync(s => s.SetProperty(l => l.IsAvailable, false), ct);
+            .Select(l => l.Id)
+            .ToListAsync(ct);
 
-        if (delistedCount > 0)
-            logger.LogInformation("{Source} marked {Count} listings as unavailable", scraper.SourceName, delistedCount);
+        if (delistedIds.Count > 0)
+        {
+            await db.RentalListings
+                .Where(l => delistedIds.Contains(l.Id))
+                .ExecuteUpdateAsync(s => s.SetProperty(l => l.IsAvailable, false), ct);
+
+            logger.LogInformation("{Source} marked {Count} listings as unavailable", scraper.SourceName, delistedIds.Count);
+
+            await retractor.RetractAsync(delistedIds, ct);
+        }
 
         var newEntities = new List<RentalListing>();
         var priceDropEntities = new List<RentalListing>();

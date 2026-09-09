@@ -78,6 +78,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.UserId).HasColumnName("user_id");
             e.Property(x => x.ListingId).HasColumnName("listing_id");
             e.Property(x => x.SentAt).HasColumnName("sent_at");
+            e.Property(x => x.MessageId).HasColumnName("message_id");
+            e.Property(x => x.RetractedAt).HasColumnName("retracted_at");
             e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId);
             e.HasOne(x => x.Listing).WithMany(x => x.NotificationLogs).HasForeignKey(x => x.ListingId);
             e.HasIndex(x => new { x.UserId, x.ListingId }).IsUnique();

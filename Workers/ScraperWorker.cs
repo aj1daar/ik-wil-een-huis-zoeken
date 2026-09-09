@@ -13,6 +13,8 @@ public sealed class ScraperWorker(
     IEnumerable<IPropertyScraper> scrapers,
     IDbContextFactory<AppDbContext> dbFactory,
     NotificationDispatcher dispatcher,
+    ListingAvailabilityVerifier availabilityVerifier,
+    ListingRetractor retractor,
     AdminNotifier adminNotifier,
     ScraperFetcher fetcher,
     IConfiguration config,
@@ -200,9 +202,11 @@ public sealed class ScraperWorker(
     {
         logger.LogInformation("Scraping {Source}", scraper.SourceName);
 
-        var listings = await scraper.ScrapeAsync(ct);
+        var allScraped = await scraper.ScrapeAsync(ct);
 
-        if (listings.Count == 0)
+        // An empty scrape means the parser broke — judge that on the raw result, before the
+        // rented filter, so a page full of let homes never reads as a site-structure change.
+        if (allScraped.Count == 0)
         {
             logger.LogInformation("{Source} returned 0 listings", scraper.SourceName);
             await adminNotifier.NotifyAsync(
@@ -212,18 +216,36 @@ public sealed class ScraperWorker(
             return;
         }
 
+        // Overview cards keep showing a home after it is let, tagged "Verhuurd", "Onder optie"
+        // or "Gereserveerd" — drop those before they can become a new listing. They are not
+        // added to currentExternalIds either, so an already-stored one is delisted below.
+        var listings = allScraped.Where(l => !RentedStatusDetector.IsRented(l)).ToList();
+        var rentedOnCard = allScraped.Count - listings.Count;
+        if (rentedOnCard > 0)
+            logger.LogInformation("{Source}: {Count} listings skipped, card says already rented", scraper.SourceName, rentedOnCard);
+
         logger.LogInformation("{Source} returned {Count} listings", scraper.SourceName, listings.Count);
 
         await using var db = await dbFactory.CreateDbContextAsync(ct);
 
-        // Mark listings from this source that are no longer in the current scrape as unavailable
+        // Mark listings from this source that are no longer in the current scrape as unavailable.
+        // Ids are read first so the alerts already sent for them can be pulled back.
         var currentExternalIds = listings.Select(l => l.ExternalId).ToList();
-        var delistedCount = await db.RentalListings
+        var delistedIds = await db.RentalListings
             .Where(l => l.Source == scraper.SourceName && l.IsAvailable && !currentExternalIds.Contains(l.ExternalId))
-            .ExecuteUpdateAsync(s => s.SetProperty(l => l.IsAvailable, false), ct);
+            .Select(l => l.Id)
+            .ToListAsync(ct);
 
-        if (delistedCount > 0)
-            logger.LogInformation("{Source} marked {Count} listings as unavailable", scraper.SourceName, delistedCount);
+        if (delistedIds.Count > 0)
+        {
+            await db.RentalListings
+                .Where(l => delistedIds.Contains(l.Id))
+                .ExecuteUpdateAsync(s => s.SetProperty(l => l.IsAvailable, false), ct);
+
+            logger.LogInformation("{Source} marked {Count} listings as unavailable", scraper.SourceName, delistedIds.Count);
+
+            await retractor.RetractAsync(delistedIds, ct);
+        }
 
         var newEntities = new List<RentalListing>();
         var priceDropEntities = new List<RentalListing>();
@@ -270,6 +292,24 @@ public sealed class ScraperWorker(
             db.RentalListings.Add(entity);
             await db.SaveChangesAsync(ct);
             newEntities.Add(entity);
+        }
+
+        if (newEntities.Count > 0)
+        {
+            var rented = await availabilityVerifier.FindRentedAsync(newEntities, ct);
+
+            if (rented.Count > 0)
+            {
+                var rentedIds = rented.Select(l => l.Id).ToList();
+                await db.RentalListings
+                    .Where(l => rentedIds.Contains(l.Id))
+                    .ExecuteUpdateAsync(s => s.SetProperty(l => l.IsAvailable, false), ct);
+
+                logger.LogInformation("{Source}: {Count} new listings suppressed, detail page says already rented",
+                    scraper.SourceName, rented.Count);
+
+                newEntities.RemoveAll(e => rentedIds.Contains(e.Id));
+            }
         }
 
         if (newEntities.Count > 0)

@@ -100,7 +100,7 @@ public sealed class NederwoonScraper : IPropertyScraper
                 if (price <= 0) continue;
 
                 listings.Add(new ScrapedListing(externalId, title, city, price,
-                    "https://www.nederwoon.nl" + href, SourceName));
+                    "https://www.nederwoon.nl" + href, SourceName, StatusText: card.TextContent));
             }
             catch (Exception ex)
             {

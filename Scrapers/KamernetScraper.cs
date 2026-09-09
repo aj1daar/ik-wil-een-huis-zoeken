@@ -48,7 +48,7 @@ public sealed class KamernetScraper : IPropertyScraper
                 if (price <= 0) continue;
 
                 listings.Add(new ScrapedListing(externalId, title, city, price,
-                    "https://kamernet.nl" + href, SourceName));
+                    "https://kamernet.nl" + href, SourceName, StatusText: anchor.TextContent));
             }
             catch (Exception ex)
             {

@@ -99,6 +99,13 @@ public sealed class HuurstuntScraper : IPropertyScraper
         if (!item.TryGetProperty("offers", out var offers) || !offers.TryGetProperty("price", out var priceProp))
             return false;
 
+        // schema.org availability is how this site signals a closed offer — the SEO payload
+        // keeps carrying the listing for a while after it is let.
+        var availability = offers.TryGetProperty("availability", out var availProp) &&
+                           availProp.ValueKind == JsonValueKind.String
+            ? availProp.GetString()
+            : null;
+
         var price = priceProp.ValueKind switch
         {
             JsonValueKind.Number => priceProp.GetDecimal(),
@@ -112,7 +119,7 @@ public sealed class HuurstuntScraper : IPropertyScraper
 
         var title = string.IsNullOrEmpty(street) ? $"{propertyType} {city}" : $"{propertyType} {street}";
 
-        listing = new ScrapedListing(externalId, title, city, price, url, Source);
+        listing = new ScrapedListing(externalId, title, city, price, url, Source, StatusText: availability);
         return true;
     }
 

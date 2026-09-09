@@ -13,6 +13,8 @@ public sealed class NotificationDispatcher(
     ITelegramBotClient bot,
     ILogger<NotificationDispatcher> logger)
 {
+    private static readonly TimeSpan InterMessageDelay = TimeSpan.FromMilliseconds(350);
+
     public async Task DispatchAsync(RentalListing listing, CancellationToken ct) =>
         await DispatchBatchAsync([listing], ct);
 
@@ -139,11 +141,16 @@ public sealed class NotificationDispatcher(
 
     private async Task SendAlertAsync(User user, List<RentalListing> listings, CancellationToken ct)
     {
-        var message = listings.Count == 1
-            ? FormatSingle(listings[0])
-            : FormatBatch(listings);
+        for (var i = 0; i < listings.Count; i++)
+        {
+            // One message per listing so each alert is separately readable and forwardable.
+            await SendWithRetryAsync(user.TelegramChatId, user.Id, FormatSingle(listings[i]), ct);
 
-        await SendWithRetryAsync(user.TelegramChatId, user.Id, message, ct);
+            // Telegram throttles per-chat sends; space the messages out so a burst does not
+            // trip the 429 retry path for every listing after the first.
+            if (i < listings.Count - 1)
+                await Task.Delay(InterMessageDelay, ct);
+        }
     }
 
     private async Task SendWithRetryAsync(long chatId, int userId, string message, CancellationToken ct)
@@ -199,20 +206,4 @@ public sealed class NotificationDispatcher(
         $"💶 €{listing.Price:N0}/month\n" +
         $"🔗 [View listing]({MarkdownHelper.EscapeV2(listing.SourceUrl)})\n" +
         $"_Source: {MarkdownHelper.EscapeV2(listing.Source)}_";
-
-    private static string FormatBatch(List<RentalListing> listings)
-    {
-        var lines = new System.Text.StringBuilder();
-        lines.AppendLine($"🏠 *{listings.Count} new listings found\\!*\n");
-
-        foreach (var l in listings)
-        {
-            lines.AppendLine(
-                $"• [{MarkdownHelper.EscapeV2(l.Title)}]({MarkdownHelper.EscapeV2(l.SourceUrl)}) — " +
-                $"📍 {MarkdownHelper.EscapeV2(l.City)} — " +
-                $"💶 €{l.Price:N0}");
-        }
-
-        return lines.ToString().TrimEnd();
-    }
 }

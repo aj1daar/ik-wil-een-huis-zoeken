@@ -52,7 +52,8 @@ public sealed class DirectWonenScraper : IPropertyScraper
                 var typeSpan = tile.QuerySelector("span.advert-location-header")?.TextContent.Trim() ?? string.Empty;
                 var title = string.IsNullOrEmpty(typeSpan) ? location : $"{typeSpan} {location}";
 
-                listings.Add(new ScrapedListing(externalId, title, city, price, listingUrl, SourceName));
+                listings.Add(new ScrapedListing(externalId, title, city, price, listingUrl, SourceName,
+                    StatusText: tile.TextContent));
             }
             catch (Exception ex)
             {

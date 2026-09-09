@@ -4,7 +4,6 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 
 namespace IWEHZ.Infrastructure.Http;
-
 /// <summary>
 /// Builds <see cref="HttpClient"/> instances that route scraper traffic through
 /// ScraperAPI's proxy endpoint (rotating IPs, geo-targeting, and optional

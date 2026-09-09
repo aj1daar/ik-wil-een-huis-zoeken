@@ -63,7 +63,8 @@ public sealed class VestedaScraper : IPropertyScraper
 
                 if (price <= 0) continue;
 
-                listings.Add(new ScrapedListing(id, title, city, price, url, SourceName));
+                listings.Add(new ScrapedListing(id, title, city, price, url, SourceName,
+                    StatusText: ExtractStatus(unit)));
             }
             catch (Exception ex)
             {
@@ -72,5 +73,21 @@ public sealed class VestedaScraper : IPropertyScraper
         }
 
         return listings;
+    }
+
+    // The search API carries the letting state as a free-text status and/or an availability
+    // flag; both are optional, so fall back to null when neither is present.
+    private static string? ExtractStatus(JsonElement unit)
+    {
+        if (unit.TryGetProperty("status", out var statusProp) && statusProp.ValueKind == JsonValueKind.String)
+            return statusProp.GetString();
+
+        foreach (var name in (string[])["isAvailable", "available"])
+        {
+            if (unit.TryGetProperty(name, out var flag) && flag.ValueKind == JsonValueKind.False)
+                return "niet beschikbaar";
+        }
+
+        return null;
     }
 }

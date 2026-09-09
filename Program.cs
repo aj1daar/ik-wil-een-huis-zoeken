@@ -39,6 +39,7 @@ builder.Services.AddSingleton<IPropertyScraper, VbtScraper>();
 builder.Services.AddSingleton<UserService>();
 builder.Services.AddSingleton<CityService>();
 builder.Services.AddSingleton<NotificationDispatcher>();
+builder.Services.AddSingleton<ListingAvailabilityVerifier>();
 builder.Services.AddSingleton<AdminNotifier>();
 builder.Services.AddSingleton<MessageHandler>();
 

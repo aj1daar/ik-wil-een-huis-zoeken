@@ -101,7 +101,8 @@ public sealed class WonenScraper123 : IPropertyScraper
                     ?? $"Huurwoning {city}";
 
                 var fullUrl = href.StartsWith("http") ? href : "https://www.123wonen.nl" + href;
-                listings.Add(new ScrapedListing(externalId, title, city, price, fullUrl, SourceName));
+                listings.Add(new ScrapedListing(externalId, title, city, price, fullUrl, SourceName,
+                    StatusText: card.TextContent));
             }
             catch (Exception ex)
             {

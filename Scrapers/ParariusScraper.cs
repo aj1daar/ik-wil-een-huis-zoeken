@@ -64,7 +64,8 @@ public sealed class ParariusScraper : IPropertyScraper
                     article.QuerySelector(".listing-search-item__price")?.TextContent ?? string.Empty);
                 if (price <= 0) continue;
 
-                listings.Add(new ScrapedListing(externalId, title, city, price, url, SourceName));
+                listings.Add(new ScrapedListing(externalId, title, city, price, url, SourceName,
+                    StatusText: article.TextContent));
             }
             catch (Exception ex)
             {

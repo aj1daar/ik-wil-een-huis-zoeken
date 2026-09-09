@@ -110,7 +110,8 @@ public sealed class VbtScraper : IPropertyScraper
 
         var url = href.StartsWith("http", StringComparison.Ordinal) ? href : "https://vbtverhuurmakelaars.nl" + href;
 
-        listing = new ScrapedListing(externalId, title, city, price, url, Source);
+        listing = new ScrapedListing(externalId, title, city, price, url, Source,
+            StatusText: card.TextContent);
         return true;
     }
 }
